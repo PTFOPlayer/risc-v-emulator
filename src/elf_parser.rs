@@ -1,3 +1,10 @@
+#![allow(dead_code)]
+#![allow(unused_unsafe)]
+
+use std::{mem::transmute, rc::Rc};
+
+use crate::error::EmulatorError;
+
 #[repr(u8)]
 #[derive(Debug, Clone)]
 pub enum ABI {
@@ -55,31 +62,56 @@ pub struct ELF {
     abi: ABI,
     obj_type: ObjType,
     entry_point: u64,
-    program_header: u64,
-    section_header_addres: u64,
+    program_header_address: u64,
+    section_header_address: u64,
     elf_header_size: u16,
     program_header_size: u16,
     program_header_entries: u16,
     section_header_size: u16,
     section_header_entries: u16,
-    section_header_names: u16
+    section_header_names: u16,
 }
 
-pub fn elf_parser(data: &Vec<u8>) -> ELF {
+macro_rules! fast_transmute {
+    (<$start:expr, u16>, $data: expr ) => {
+        unsafe { transmute::<[u8; 2], u16>([$data[$start + 0], $data[$start + 1]]) }
+    };
+    (<$start:expr, u32>, $data: expr ) => {
+        unsafe {
+            transmute::<[u8; 4], u32>([
+                $data[$start + 0],
+                $data[$start + 1],
+                $data[$start + 2],
+                $data[$start + 3],
+            ])
+        }
+    };
+    (<$start:expr, u64>, $data: expr ) => {
+        unsafe {
+            transmute::<[u8; 8], u64>([
+                $data[$start + 0],
+                $data[$start + 1],
+                $data[$start + 2],
+                $data[$start + 3],
+                $data[$start + 4],
+                $data[$start + 5],
+                $data[$start + 6],
+                $data[$start + 7],
+            ])
+        }
+    };
+    (<$start:expr, $t_type:tt, $t_temp:tt>, $data: expr) => {
+        unsafe {
+                transmute::<$t_temp, $t_type>(fast_transmute!(<$start, $t_temp>, $data))
+        }
+    }
+}
+pub fn elf_parser(data: &[u8]) -> ELF {
     let mut bin_arc = BinArc::X32;
     let mut endian = Endian::Little;
 
-    let magic_number = &data[0..4];
-    println!("{:?}", magic_number);
-    let magic = unsafe {
-        std::mem::transmute([
-            magic_number[0],
-            magic_number[1],
-            magic_number[2],
-            magic_number[3],
-        ])
-    };
-
+    let t_magic = &data[0..4];
+    let magic = fast_transmute!(<0, u32>, t_magic);
     let ident = data[4];
     if ident == 2 {
         bin_arc = BinArc::X64;
@@ -95,14 +127,13 @@ pub fn elf_parser(data: &Vec<u8>) -> ELF {
         panic!("that is supposed to be set to 1");
     }
 
-    let abi: ABI = unsafe { std::mem::transmute([data[7], data[8]]) };
-
+    let abi = fast_transmute!(<7, ABI, u16>, data);
     let _padding = &data[9..16];
 
-    let obj_type = unsafe { std::mem::transmute([data[16], data[17]]) };
+    let obj_type = fast_transmute!(<16, ObjType, u16>, data);
 
     // 0xF3 means RISC-V
-    let arc: u16 = unsafe { std::mem::transmute([data[18], data[19]]) };
+    let arc = fast_transmute!(<18, u16>, data);
     if arc != 0xF3 && arc != 0x00 {
         panic!("this ELF is not for RISC-V architecture: {:x}", arc)
     } else if arc == 0x00 {
@@ -110,57 +141,35 @@ pub fn elf_parser(data: &Vec<u8>) -> ELF {
             "\x1b[93mWARNING\x1b[0m: no guarantee that this ELF is made for RISC-V architecture"
         )
     }
-    let _e_version: u32 = unsafe { std::mem::transmute([data[20], data[21], data[22], data[23]]) };
+    let _e_version = fast_transmute!(<20, u32>, data);
 
     let entry_point;
-    let program_header;
-    let section_header_addres;
+    let program_header_address;
+    let section_header_address;
     let rp; //reference point
+    unsafe {
+        if bin_arc == BinArc::X64 {
+            entry_point = fast_transmute!(<24, u64>, data);
+            program_header_address = fast_transmute!(<32, u64>, data);
+            section_header_address = fast_transmute!(<40, u64>, data);
 
-    if bin_arc == BinArc::X64 {
-        entry_point = unsafe {
-            std::mem::transmute([
-                data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
-            ])
-        };
-        program_header = unsafe {
-            std::mem::transmute([
-                data[32], data[33], data[34], data[35], data[36], data[37], data[38], data[39],
-            ])
-        };
-        section_header_addres = unsafe {
-            std::mem::transmute([
-                data[40], data[41], data[42], data[43], data[44], data[45], data[46], data[47],
-            ])
-        };
-        rp = 48;
-    } else {
-        entry_point = unsafe {
-            let temp: u32 = std::mem::transmute([data[24], data[25], data[26], data[27]]);
-            temp as u64
-        };
-        program_header = unsafe {
-            let temp: u32 = std::mem::transmute([data[28], data[29], data[30], data[31]]);
-            temp as u64
-        };
-        section_header_addres = unsafe {
-            let temp: u32 = std::mem::transmute([data[32], data[33], data[34], data[35]]);
-            temp as u64
-        };
+            rp = 48;
+        } else {
+            entry_point = fast_transmute!(<24, u32>, data) as u64;
+            program_header_address = fast_transmute!(<28, u32>, data) as u64;
+            section_header_address = fast_transmute!(<32, u32>, data) as u64;
 
-        rp = 36;
+            rp = 36;
+        }
     }
 
-    let _unknown: u32 =
-        unsafe { std::mem::transmute([data[rp], data[rp + 1], data[rp + 2], data[rp + 3]]) };
-
-    let elf_header_size: u16 = unsafe { std::mem::transmute([data[rp + 4], data[rp + 5]]) };
-    let program_header_size: u16 = unsafe { std::mem::transmute([data[rp + 6], data[rp + 7]]) };
-    let program_header_entries: u16 = unsafe { std::mem::transmute([data[rp + 8], data[rp + 9]]) };
-    let section_header_size: u16 =
-        unsafe { std::mem::transmute([data[rp + 10], data[rp + 11]]) };
-    let section_header_entries: u16 = unsafe { std::mem::transmute([data[rp + 12], data[rp + 13]]) };
-    let section_header_names: u16 = unsafe { std::mem::transmute([data[rp + 14], data[rp + 15]]) };
+    let _unknown = fast_transmute!(<rp, u32>, data);
+    let elf_header_size = fast_transmute!(<rp+4, u16>, data);
+    let program_header_size = fast_transmute!(<rp+6, u16>, data);
+    let program_header_entries = fast_transmute!(<rp+8, u16>, data);
+    let section_header_size = fast_transmute!(<rp+10, u16>, data);
+    let section_header_entries = fast_transmute!(<rp+12, u16>, data);
+    let section_header_names = fast_transmute!(<rp+14, u16>, data);
     ELF {
         magic,
         bin_arc,
@@ -168,8 +177,8 @@ pub fn elf_parser(data: &Vec<u8>) -> ELF {
         abi,
         obj_type,
         entry_point,
-        program_header,
-        section_header_addres,
+        program_header_address,
+        section_header_address,
         elf_header_size,
         program_header_size,
         program_header_entries,
@@ -179,7 +188,243 @@ pub fn elf_parser(data: &Vec<u8>) -> ELF {
     }
 }
 
-pub fn section_header_parser(data: &Vec<u8>, elf: &ELF) {
-    let start = elf.section_header_addres;
+#[repr(u32)]
+#[derive(Debug, Clone)]
+pub enum ProgramHeaderType {
+    PtNull = 0x00000000,
+    PtLoad = 0x00000001,
+    PtDynamic = 0x00000002,
+    PtInterp = 0x00000003,
+    PtNote = 0x00000004,
+    PtShlib = 0x00000005,
+    PtPhdr = 0x00000006,
+    PtTls = 0x00000007,
+    PtLoos = 0x60000000,
+    PtHios = 0x6FFFFFFF,
+    PtLoproc = 0x70000000,
+    PtHiproc = 0x7FFFFFFF,
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone)]
+pub enum ProgramHeaderFlags {
+    PfX = 0x1,
+    PfW = 0x2,
+    PfR = 0x4,
+
+    Error = 0x0,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProgramHeader {
+    pub p_type: ProgramHeaderType,
+    pub p_flags: Vec<ProgramHeaderFlags>,
+    pub segment_offset: u64,
+    pub virtual_address: u64,
+    pub physical_address: u64,
+    pub segment_size: u64,
+    pub mem_size: u64,
+    pub alignment: u64,
+}
+
+pub fn program_header_parser(data: &[u8], elf: &ELF) -> Vec<ProgramHeader> {
+    let start = elf.program_header_address as usize;
     let bin_arc = &elf.bin_arc;
+    let size = elf.program_header_size as usize;
+    let entries = elf.program_header_entries as usize;
+
+    let mut v = vec![];
+
+    for i in 0..entries {
+        let of = (i * size) + start;
+        let p_type = fast_transmute!(<of, ProgramHeaderType , u32>, data);
+
+        let p_flags = {
+            let mut flags = vec![];
+            let temp = if *bin_arc == BinArc::X64 {
+                fast_transmute!(<of+4, u32>, data)
+            } else {
+                fast_transmute!(<of+24, u32>, data)
+            };
+            if temp & 0x1 == 0x1 {
+                flags.push(ProgramHeaderFlags::PfX);
+            }
+            if temp & 0x2 == 0x2 {
+                flags.push(ProgramHeaderFlags::PfX);
+            }
+            if temp & 0x4 == 0x4 {
+                flags.push(ProgramHeaderFlags::PfR);
+            }
+            flags
+        };
+
+        let segment_offset;
+        let virtual_address;
+        let physical_address;
+        let segment_size;
+        let mem_size;
+        let alignment;
+
+        unsafe {
+            if *bin_arc == BinArc::X64 {
+                segment_offset = fast_transmute!(<of+8, u64>, data);
+                virtual_address = fast_transmute!(<of+16, u64>, data);
+                physical_address = fast_transmute!(<of+24, u64>, data);
+                segment_size = fast_transmute!(<of+32, u64>, data);
+                mem_size = fast_transmute!(<of+40, u64>, data);
+                alignment = fast_transmute!(<of+48, u64>, data);
+            } else {
+                segment_offset = fast_transmute!(<of+4, u32>, data) as u64;
+                virtual_address = fast_transmute!(<of+8, u32>, data) as u64;
+                physical_address = fast_transmute!(<of+12, u32>, data) as u64;
+                segment_size = fast_transmute!(<of+16, u32>, data) as u64;
+                mem_size = fast_transmute!(<of+20, u32>, data) as u64;
+                alignment = fast_transmute!(<of+28, u32>, data) as u64;
+            }
+        };
+
+        v.push(ProgramHeader {
+            p_type,
+            p_flags,
+            segment_offset,
+            virtual_address,
+            physical_address,
+            segment_size,
+            mem_size,
+            alignment,
+        });
+    }
+
+    v
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SectionHeaderType {
+    ShtNull = 0x0,
+    ShtProgbits = 0x1,
+    ShtSymtab = 0x2,
+    ShtStrtab = 0x3,
+    ShtRela = 0x4,
+    ShtHash = 0x5,
+    ShtDynamic = 0x6,
+    ShtNote = 0x7,
+    ShtNobits = 0x8,
+    ShtRel = 0x9,
+    ShtShlib = 0x0A,
+    ShtDynsym = 0x0B,
+    ShtInitArray = 0x0E,
+    ShtFiniArray = 0x0F,
+    ShtPreinitArray = 0x10,
+    ShtGroup = 0x11,
+    ShtSymtabShndx = 0x12,
+    ShtNum = 0x13,
+    ShtLoos = 0x60000000,
+}
+
+#[derive(Debug, Clone)]
+pub struct SectionHeader {
+    pub name: u32,
+    pub name_str: Option<Rc<str>>,
+    pub section_type: SectionHeaderType,
+    pub flags: u64,
+    pub section_address: u64,
+    pub section_offset: u64,
+    pub section_size: u64,
+    pub link: u32,
+    pub info: u32,
+    pub alignment: u64,
+    pub entry_size: u64,
+}
+
+pub fn raw_section_header_parser(data: &[u8], elf: &ELF) -> Vec<SectionHeader> {
+    let start = elf.section_header_address as usize;
+    let bin_arc = &elf.bin_arc;
+    let size = elf.section_header_size as usize;
+    let entries = elf.section_header_entries as usize;
+
+    let mut v = vec![];
+
+    for i in 0..entries {
+        let of = (i * size) + start;
+
+        let name = fast_transmute!(<of, u32>, data);
+        let section_type = fast_transmute!(<of + 4, SectionHeaderType, u32>, data);
+
+        let flags;
+        let section_address;
+        let section_offset;
+        let section_size;
+        let link;
+        let info;
+        let alignment;
+        let entry_size;
+
+        unsafe {
+            if *bin_arc == BinArc::X64 {
+                flags = fast_transmute!(<of+8, u64>, data);
+                section_address = fast_transmute!(<of+16, u64>, data);
+                section_offset = fast_transmute!(<of+24, u64>, data);
+                section_size = fast_transmute!(<of+32, u64>, data);
+                link = fast_transmute!(<of+40, u32>, data);
+                info = fast_transmute!(<of+44, u32>, data);
+                alignment = fast_transmute!(<of+48, u64>, data);
+                entry_size = fast_transmute!(<of+56, u64>, data);
+            } else {
+                flags = fast_transmute!(<of+8, u32>, data) as u64;
+                section_address = fast_transmute!(<of+12, u32>, data) as u64;
+                section_offset = fast_transmute!(<of+16, u32>, data) as u64;
+                section_size = fast_transmute!(<of+20, u32>, data) as u64;
+                link = fast_transmute!(<of+24, u32>, data);
+                info = fast_transmute!(<of+28, u32>, data);
+                alignment = fast_transmute!(<of+32, u32>, data) as u64;
+                entry_size = fast_transmute!(<of+36, u32>, data) as u64;
+            }
+        }
+
+        v.push(SectionHeader {
+            name,
+            section_type,
+            flags,
+            section_address,
+            section_offset,
+            section_size,
+            link,
+            info,
+            alignment,
+            entry_size,
+            name_str: None,
+        })
+    }
+
+    v
+}
+
+pub fn section_header_final(
+    data: &[u8],
+    v: &mut Vec<SectionHeader>,
+) -> Result<Vec<Rc<str>>, EmulatorError> {
+    let strtab = v
+        .iter()
+        .find(|x| x.section_type == SectionHeaderType::ShtStrtab)
+        .ok_or(EmulatorError::StrTabError)?
+        .clone();
+
+    let mut list = vec![];
+
+    for e in v {
+        let name_start = strtab.section_offset + e.name as u64 + strtab.section_size;
+        let mut name_vec = vec![];
+        for i in name_start.. {
+            if data[i as usize] == b'\0' {
+                break;
+            }
+            name_vec.push(data[i as usize])
+        }
+        let name: Rc<str> = String::from_utf8(name_vec)?.as_str().into();
+        e.name_str = Some(name.clone());
+        list.push(name.clone())
+    }
+
+    Ok(list)
 }
