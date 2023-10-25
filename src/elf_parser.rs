@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 #![allow(unused_unsafe)]
 
-use std::{mem::transmute, rc::Rc};
+use std::rc::Rc;
 
-use crate::error::EmulatorError;
+use crate::{error::EmulatorError, fast_transmute};
 
 #[repr(u8)]
 #[derive(Debug, Clone)]
@@ -72,40 +72,6 @@ pub struct ELF {
     section_header_names: u16,
 }
 
-macro_rules! fast_transmute {
-    (<$start:expr, u16>, $data: expr ) => {
-        unsafe { transmute::<[u8; 2], u16>([$data[$start + 0], $data[$start + 1]]) }
-    };
-    (<$start:expr, u32>, $data: expr ) => {
-        unsafe {
-            transmute::<[u8; 4], u32>([
-                $data[$start + 0],
-                $data[$start + 1],
-                $data[$start + 2],
-                $data[$start + 3],
-            ])
-        }
-    };
-    (<$start:expr, u64>, $data: expr ) => {
-        unsafe {
-            transmute::<[u8; 8], u64>([
-                $data[$start + 0],
-                $data[$start + 1],
-                $data[$start + 2],
-                $data[$start + 3],
-                $data[$start + 4],
-                $data[$start + 5],
-                $data[$start + 6],
-                $data[$start + 7],
-            ])
-        }
-    };
-    (<$start:expr, $t_type:tt, $t_temp:tt>, $data: expr) => {
-        unsafe {
-                transmute::<$t_temp, $t_type>(fast_transmute!(<$start, $t_temp>, $data))
-        }
-    }
-}
 pub fn elf_parser(data: &[u8]) -> ELF {
     let mut bin_arc = BinArc::X32;
     let mut endian = Endian::Little;
@@ -127,10 +93,10 @@ pub fn elf_parser(data: &[u8]) -> ELF {
         panic!("that is supposed to be set to 1");
     }
 
-    let abi = fast_transmute!(<7, ABI, u16>, data);
+    let abi = fast_transmute!(<7, ABI @ u16>, data);
     let _padding = &data[9..16];
 
-    let obj_type = fast_transmute!(<16, ObjType, u16>, data);
+    let obj_type = fast_transmute!(<16, ObjType @ u16>, data);
 
     // 0xF3 means RISC-V
     let arc = fast_transmute!(<18, u16>, data);
@@ -237,7 +203,7 @@ pub fn program_header_parser(data: &[u8], elf: &ELF) -> Vec<ProgramHeader> {
 
     for i in 0..entries {
         let of = (i * size) + start;
-        let p_type = fast_transmute!(<of, ProgramHeaderType , u32>, data);
+        let p_type = fast_transmute!(<of, ProgramHeaderType @ u32>, data);
 
         let p_flags = {
             let mut flags = vec![];
@@ -294,7 +260,6 @@ pub fn program_header_parser(data: &[u8], elf: &ELF) -> Vec<ProgramHeader> {
             alignment,
         });
     }
-
     v
 }
 
@@ -337,7 +302,19 @@ pub struct SectionHeader {
     pub entry_size: u64,
 }
 
-pub fn raw_section_header_parser(data: &[u8], elf: &ELF) -> Vec<SectionHeader> {
+#[derive(Debug)]
+pub struct SectionHeadersList {
+    pub headers: Vec<SectionHeader>,
+    pub list: Vec<Rc<str>>,
+}
+
+impl SectionHeadersList {
+    pub fn len(&self) -> usize {
+        self.headers.len()
+    }
+}
+
+pub fn raw_section_header_parser(data: &[u8], elf: &ELF) -> SectionHeadersList {
     let start = elf.section_header_address as usize;
     let bin_arc = &elf.bin_arc;
     let size = elf.section_header_size as usize;
@@ -349,7 +326,7 @@ pub fn raw_section_header_parser(data: &[u8], elf: &ELF) -> Vec<SectionHeader> {
         let of = (i * size) + start;
 
         let name = fast_transmute!(<of, u32>, data);
-        let section_type = fast_transmute!(<of + 4, SectionHeaderType, u32>, data);
+        let section_type = fast_transmute!(<of + 4, SectionHeaderType @ u32>, data);
 
         let flags;
         let section_address;
@@ -396,35 +373,76 @@ pub fn raw_section_header_parser(data: &[u8], elf: &ELF) -> Vec<SectionHeader> {
             name_str: None,
         })
     }
-
-    v
+    SectionHeadersList {
+        headers: v,
+        list: vec![],
+    }
 }
 
-pub fn section_header_final(
-    data: &[u8],
-    v: &mut Vec<SectionHeader>,
-) -> Result<Vec<Rc<str>>, EmulatorError> {
-    let strtab = v
-        .iter()
-        .find(|x| x.section_type == SectionHeaderType::ShtStrtab)
-        .ok_or(EmulatorError::StrTabError)?
-        .clone();
+impl SectionHeadersList {
+    pub fn fill_names(&mut self, data: &[u8]) -> Result<(), EmulatorError> {
+        let strtab = self
+            .headers
+            .iter()
+            .find(|x| x.section_type == SectionHeaderType::ShtStrtab)
+            .ok_or(EmulatorError::StrTabError)?
+            .clone();
 
-    let mut list = vec![];
-
-    for e in v {
-        let name_start = strtab.section_offset + e.name as u64 + strtab.section_size;
-        let mut name_vec = vec![];
-        for i in name_start.. {
-            if data[i as usize] == b'\0' {
-                break;
+        for mut e in &mut self.headers {
+            let name_start = strtab.section_offset + e.name as u64 + strtab.section_size;
+            let mut name_vec = vec![];
+            for i in name_start.. {
+                if data[i as usize] == b'\0' {
+                    break;
+                }
+                name_vec.push(data[i as usize])
             }
-            name_vec.push(data[i as usize])
+            let name: Rc<str> = String::from_utf8(name_vec)?.as_str().into();
+            e.name_str = Some(name.clone());
+            self.list.push(name.clone())
         }
-        let name: Rc<str> = String::from_utf8(name_vec)?.as_str().into();
-        e.name_str = Some(name.clone());
-        list.push(name.clone())
+        Ok(())
     }
 
-    Ok(list)
+    pub fn find_text_section(&self) -> Option<&SectionHeader> {
+        self.headers
+            .iter()
+            .find(|x| {
+                if let Some(name) = &x.name_str {
+                    *name == ".text".into()
+                } else {
+                    false
+                }
+            })
+            .clone()
+    }
+}
+
+impl IntoIterator for SectionHeadersList {
+    type Item = SectionHeader;
+
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.headers.into_iter()
+    }
+}
+
+pub fn extract_prog_bits<'a>(
+    data: &'a [u8],
+    text: &'a SectionHeader,
+) -> Result<&'a [u8], EmulatorError> {
+    if text
+        .name_str
+        .clone()
+        .ok_or(EmulatorError::WrongHeaderProvieded)?
+        != ".text".into()
+    {
+        return Err(EmulatorError::WrongHeaderProvieded);
+    }
+
+    let lower = text.section_offset as usize;
+    let upper = (text.section_offset + text.section_size) as usize;
+
+    Ok(&data[lower..upper])
 }

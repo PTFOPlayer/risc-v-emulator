@@ -4,7 +4,8 @@ use std::{io, string::FromUtf8Error};
 pub enum EmulatorError {
     FileError(io::Error),
     FromUtf8(FromUtf8Error),
-    StrTabError
+    StrTabError,
+    WrongHeaderProvieded
 }
 
 impl From<std::io::Error> for EmulatorError {
