@@ -6,7 +6,7 @@
 // opcode mask for type J:                          0b1111111
 
 #[repr(u32)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Instructions {
     Unknown = 0,
     //U type
@@ -37,6 +37,8 @@ pub enum Instructions {
     Fence = 0b00000000000000000000000000001111,
     FenceI = 0b00000000000000000001000000001111,
     //sys calls
+    Ecall = 0b00000000000000000000000001110011,
+    Ebreak = 0b00000000000100000000000001110011,
 }
 
 impl Instructions {
@@ -78,6 +80,8 @@ impl Instructions {
         let o_r_type = match op & 0b11111110000000000111000001111111 {
             0b00000000000000000000000000001111 => Self::Fence,
             0b00000000000000000001000000001111 => Self::FenceI,
+            0b00000000000000000000000001110011 => Self::Ecall,
+            0b00000000000100000000000001110011 => Self::Ebreak,
             _ => Self::Unknown,
         };
 
@@ -103,9 +107,6 @@ pub fn get_instructions(prog_bits: &[u8]) -> Vec<Instruction> {
     let mut instructions = vec![];
     for i in (0..prog_bits.len()).step_by(4) {
         let temp = fast_transmute!(<0, u32>, [prog_bits[i+0], prog_bits[i+1], prog_bits[i+2], prog_bits[i+3]]);
-    
-        println!("{:?}", Instructions::parse(temp));
-
         instructions.push(Instruction { instruction_raw: temp, instruction: Instructions::parse(temp) });
     }
 
