@@ -40,60 +40,61 @@ pub enum Instructions {
     Ecall = 0b00000000000000000000000001110011,
     Ebreak = 0b00000000000100000000000001110011,
     // jump / J type
-    Jal = 0b1101111
+    Jal = 0b1101111,
+    Jalr = 0b1100111,
 }
 
 impl Instructions {
     fn parse(op: u32) -> Self {
-        let u_type = match op & 0b1111111 {
+        let instruction_type = op & 0x7F;
+        match instruction_type {
+            // shifts
+            0b00000000000000000001000000010011 => Self::Slli,
+            0b00000000000000000101000000010011 => Self::Srli,
+            0b01000000000000000101000000010011 => Self::Srai,
             // u_type
             0b0110111 => Self::Lui,
             0b0010111 => Self::Auipc,
             // j_type
             0b1101111 => Self::Jal,
-            _ => Self::Unknown,
-        };
-
-        let i_type = match op & 0b111000001111111 {
+            0b1100111 => Self::Jalr,
             // i_type
-            0b000000000010011 => Self::Addi,
-            0b010000000010011 => Self::Slti,
-            0b011000000010011 => Self::Sltiu,
-            0b100000000010011 => Self::Xori,
-            0b110000000010011 => Self::Ori,
-            0b111000000010011 => Self::Andi,
-            _ => Self::Unknown,
-        };
-
-        // 0b11111110000000000111000001111111
-        let r_type = match op & 0b11111110000000000111000001111111 {
+            0b0010011 => {
+                let funct = op >> 12 & 0x7;
+                match funct {
+                    0b000 => Self::Addi,
+                    0b010 => Self::Slti,
+                    0b011 => Self::Sltiu,
+                    0b100 => Self::Xori,
+                    0b110 => Self::Ori,
+                    0b111 => Self::Andi,
+                    _ => Self::Unknown,
+                }
+            }
             // r_type
-            0b00000000000000000001000000010011 => Self::Slli,
-            0b00000000000000000101000000010011 => Self::Srli,
-            0b01000000000000000101000000010011 => Self::Srai,
-            0b00000000000000000000000000110011 => Self::Add,
-            0b01000000000000000000000000110011 => Self::Sub,
-            0b00000000000000000001000000110011 => Self::Sll,
-            0b00000000000000000010000000110011 => Self::Slt,
-            0b00000000000000000011000000110011 => Self::Sltu,
-            0b00000000000000000100000000110011 => Self::Xor,
-            0b00000000000000000101000000110011 => Self::Srl,
-            0b01000000000000000101000000110011 => Self::Sra,
-            0b00000000000000000110000000110011 => Self::Or,
-            0b00000000000000000111000000110011 => Self::And,
-            // o_r_type
+            0b0110011 => {
+                let funct3 = op >> 12 & 0x7;
+                let funct7 = op >> 24 & 0x7F;
+                match (funct7, funct3) {
+                    (0b0000000, 000) => Self::Add,
+                    (0b0100000, 000) => Self::Sub,
+                    (0b0000000, 001) => Self::Sll,
+                    (0b0000000, 010) => Self::Slt,
+                    (0b0000000, 011) => Self::Sltu,
+                    (0b0000000, 100) => Self::Xor,
+                    (0b0000000, 101) => Self::Srl,
+                    (0b0100000, 101) => Self::Sra,
+                    (0b0000000, 110) => Self::Or,
+                    (0b0000000, 111) => Self::And,
+                    (_, _) => Self::Unknown,
+                }
+            }
+            // fence
             0b00000000000000000000000000001111 => Self::Fence,
             0b00000000000000000001000000001111 => Self::FenceI,
+            //calls
             0b00000000000000000000000001110011 => Self::Ecall,
             0b00000000000100000000000001110011 => Self::Ebreak,
-
-            _ => Self::Unknown,
-        };
-
-        match (u_type, i_type, r_type) {
-            (Self::Unknown, Self::Unknown, a) => a,
-            (Self::Unknown, a, Self::Unknown) => a,
-            (a, Self::Unknown, Self::Unknown) => a,
             _ => Self::Unknown,
         }
     }

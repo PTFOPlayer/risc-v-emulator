@@ -10,6 +10,8 @@ use crate::{
 };
 use error::*;
 
+const DEBUG: bool = false;
+
 thread_local! {
     static REGISTERS: RefCell<[u64;32]> = RefCell::new([0;32]);
     static PC: RefCell<u32> = RefCell::new(0);
@@ -22,20 +24,24 @@ fn main() -> Result<(), EmulatorError> {
     let data = std::fs::read("./a.out")?;
 
     let elf = elf_parser::elf_parser(&data);
-    println!("{:?}\n\n", elf);
 
     let program_headers = program_header_parser(&data, &elf);
-    println!("{}, {:?}\n\n", program_headers.len(), program_headers);
 
     let mut section_headers = raw_section_header_parser(&data, &elf);
     section_headers.fill_names(&data)?;
-    for i in 0..section_headers.len() {
-        println!("{:?}", section_headers.headers[i]);
-    }
 
     let text = section_headers.find_text_section().unwrap();
-    println!("{:?}", text);
-    println!("adddr: {:x?}", text.section_address);
+    
+    if DEBUG {
+        println!("{:?}\n\n", elf);
+        println!("{}, {:?}\n\n", program_headers.len(), program_headers);
+        for i in 0..section_headers.len() {
+            println!("{:?}", section_headers.headers[i]);
+        }
+        println!("{:?}", text);
+        println!("adddr: {:x?}", text.section_address);
+    }
+
     let prog_bits = extract_prog_bits(&data, text)?;
 
     set_pc!(text.section_address);
@@ -44,6 +50,7 @@ fn main() -> Result<(), EmulatorError> {
         dram[i] = *e;
         i += 1;
     }
+
     const RD: u32 = 0b111110000000;
 
     const U_TYPE_RD: u32 = 0b111110000000;
@@ -56,6 +63,8 @@ fn main() -> Result<(), EmulatorError> {
 
     const I_TYPE_RS: u32 = 0b11111000000000000000;
     const I_TYPE_IMM: u32 = !0b11111111111111111111;
+
+    const ZERO: usize = 0;
 
     const A0: usize = 10;
     const A1: usize = A0 + 1;
@@ -127,12 +136,21 @@ fn main() -> Result<(), EmulatorError> {
                 set_reg!(rd, get_pc!() + 4);
                 set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
             }
+            Instructions::Jalr => {}
         };
+
         inc_pc!();
+
         dbg_reg();
+
+        if read_reg!(ZERO) != 0 {
+            set_reg!(ZERO, 0);
+        };
+
         if read_reg!(A0) == 10 {
-            panic!("reg a0 test")
+            panic!("reg a0 test");
         }
+
         if get_pc!() as u64 > text.section_address + text.section_size {
             panic!("end, pc: {:x}", get_pc!());
         }
@@ -176,7 +194,7 @@ macro_rules! set_reg {
 #[macro_export]
 macro_rules! read_reg {
     ($reg: expr) => {
-        REGISTERS.with(|x| x.borrow()[$reg as usize])    
+        REGISTERS.with(|x| x.borrow()[$reg as usize])
     };
 }
 
@@ -186,7 +204,7 @@ fn dbg_reg() {
         let temp = x.borrow();
         for i in (0..temp.len()).step_by(8) {
             for j in 0..8 {
-                print!("x{}: {} \t", i + j, temp[i + j]);
+                print!("x{:02}: 0x{:x} ", i + j, temp[i + j]);
             }
             println!();
         }

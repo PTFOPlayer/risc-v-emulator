@@ -388,7 +388,7 @@ impl SectionHeadersList {
             .ok_or(EmulatorError::StrTabError)?
             .clone();
 
-        for mut e in &mut self.headers {
+        for e in &mut self.headers {
             let name_start = strtab.section_offset + e.name as u64 + strtab.section_size;
             let mut name_vec = vec![];
             for i in name_start.. {
