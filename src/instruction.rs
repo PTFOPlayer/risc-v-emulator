@@ -39,17 +39,23 @@ pub enum Instructions {
     //sys calls
     Ecall = 0b00000000000000000000000001110011,
     Ebreak = 0b00000000000100000000000001110011,
+    // jump / J type
+    Jal = 0b1101111
 }
 
 impl Instructions {
     fn parse(op: u32) -> Self {
         let u_type = match op & 0b1111111 {
+            // u_type
             0b0110111 => Self::Lui,
             0b0010111 => Self::Auipc,
+            // j_type
+            0b1101111 => Self::Jal,
             _ => Self::Unknown,
         };
 
         let i_type = match op & 0b111000001111111 {
+            // i_type
             0b000000000010011 => Self::Addi,
             0b010000000010011 => Self::Slti,
             0b011000000010011 => Self::Sltiu,
@@ -61,6 +67,7 @@ impl Instructions {
 
         // 0b11111110000000000111000001111111
         let r_type = match op & 0b11111110000000000111000001111111 {
+            // r_type
             0b00000000000000000001000000010011 => Self::Slli,
             0b00000000000000000101000000010011 => Self::Srli,
             0b01000000000000000101000000010011 => Self::Srai,
@@ -74,22 +81,19 @@ impl Instructions {
             0b01000000000000000101000000110011 => Self::Sra,
             0b00000000000000000110000000110011 => Self::Or,
             0b00000000000000000111000000110011 => Self::And,
-            _ => Self::Unknown,
-        };
-
-        let o_r_type = match op & 0b11111110000000000111000001111111 {
+            // o_r_type
             0b00000000000000000000000000001111 => Self::Fence,
             0b00000000000000000001000000001111 => Self::FenceI,
             0b00000000000000000000000001110011 => Self::Ecall,
             0b00000000000100000000000001110011 => Self::Ebreak,
+
             _ => Self::Unknown,
         };
 
-        match (u_type, i_type, r_type, o_r_type) {
-            (Self::Unknown, Self::Unknown, Self::Unknown, a) => a,
-            (Self::Unknown, Self::Unknown, a, Self::Unknown) => a,
-            (Self::Unknown, a, Self::Unknown, Self::Unknown) => a,
-            (a, Self::Unknown, Self::Unknown, Self::Unknown) => a,
+        match (u_type, i_type, r_type) {
+            (Self::Unknown, Self::Unknown, a) => a,
+            (Self::Unknown, a, Self::Unknown) => a,
+            (a, Self::Unknown, Self::Unknown) => a,
             _ => Self::Unknown,
         }
     }
@@ -103,12 +107,11 @@ pub struct Instruction {
 
 use crate::fast_transmute;
 
-pub fn get_instructions(prog_bits: &[u8]) -> Vec<Instruction> {
-    let mut instructions = vec![];
-    for i in (0..prog_bits.len()).step_by(4) {
-        let temp = fast_transmute!(<0, u32>, [prog_bits[i+0], prog_bits[i+1], prog_bits[i+2], prog_bits[i+3]]);
-        instructions.push(Instruction { instruction_raw: temp, instruction: Instructions::parse(temp) });
+pub fn get_instructions(prog_bits: &[u8], pc: u32) -> Instruction {
+    let pc = pc as usize;
+    let temp = fast_transmute!(<0, u32>, [prog_bits[pc+0], prog_bits[pc+1], prog_bits[pc+2], prog_bits[pc+3]]);
+    Instruction {
+        instruction_raw: temp,
+        instruction: Instructions::parse(temp),
     }
-
-    return instructions;
 }
