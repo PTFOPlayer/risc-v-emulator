@@ -3,11 +3,8 @@
 
 .text
 _start:
-    jal a1, l1
+    addi a1, x0, 10
     l0:
-    addi a0, a0, 1
-    jal a1, l0
-    l1:
-    addi a2, x0, 10
-    jal a1, l0
+    addi a0, a0, 10
+    beq a1, a0, l0
 

@@ -8,40 +8,46 @@
 #[repr(u32)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Instructions {
-    Unknown = 0,
+    Unknown,
     //U type
-    Lui = 0b0110111,
-    Auipc = 0b0010111,
+    Lui,
+    Auipc,
     //I type
-    Addi = 0b000000000010011,
-    Slti = 0b010000000010011,
-    Sltiu = 0b011000000010011,
-    Xori = 0b100000000010011,
-    Ori = 0b110000000010011,
-    Andi = 0b111000000010011,
+    Addi,
+    Slti,
+    Sltiu,
+    Xori,
+    Ori,
+    Andi,
     //R type
-    Slli = 0b00000000000000000001000000010011,
-    Srli = 0b00000000000000000101000000010011,
-    Srai = 0b01000000000000000101000000010011,
-    Add = 0b00000000000000000000000000110011,
-    Sub = 0b01000000000000000000000000110011,
-    Sll = 0b00000000000000000001000000110011,
-    Slt = 0b00000000000000000010000000110011,
-    Sltu = 0b00000000000000000011000000110011,
-    Xor = 0b00000000000000000100000000110011,
-    Srl = 0b00000000000000000101000000110011,
-    Sra = 0b01000000000000000101000000110011,
-    Or = 0b00000000000000000110000000110011,
-    And = 0b00000000000000000111000000110011,
+    Slli,
+    Srli,
+    Srai,
+    Add,
+    Sub,
+    Sll,
+    Slt,
+    Sltu,
+    Xor,
+    Srl,
+    Sra,
+    Or,
+    And,
     //Other R type
-    Fence = 0b00000000000000000000000000001111,
-    FenceI = 0b00000000000000000001000000001111,
+    Fence,
+    FenceI,
     //sys calls
-    Ecall = 0b00000000000000000000000001110011,
-    Ebreak = 0b00000000000100000000000001110011,
+    Ecall,
+    Ebreak,
     // jump / J type
-    Jal = 0b1101111,
-    Jalr = 0b1100111,
+    Jal,
+    Jalr,
+    Beq,
+    Bne,
+    Blt,
+    Bge,
+    Bltu,
+    Bgeu,
 }
 
 impl Instructions {
@@ -87,6 +93,19 @@ impl Instructions {
                     (0b0000000, 110) => Self::Or,
                     (0b0000000, 111) => Self::And,
                     (_, _) => Self::Unknown,
+                }
+            }
+            // b_type
+            0b1100011 => {
+                let funct3 = op >> 12 & 0x7;
+                match funct3 {
+                    000 => Self::Beq,
+                    001 => Self::Bne,
+                    100 => Self::Blt,
+                    101 => Self::Bge,
+                    110 => Self::Bltu,
+                    111 => Self::Bgeu,
+                    _ => Self::Unknown,
                 }
             }
             // fence

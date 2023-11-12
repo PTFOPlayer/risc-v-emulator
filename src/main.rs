@@ -31,7 +31,7 @@ fn main() -> Result<(), EmulatorError> {
     section_headers.fill_names(&data)?;
 
     let text = section_headers.find_text_section().unwrap();
-    
+
     if DEBUG {
         println!("{:?}\n\n", elf);
         println!("{}, {:?}\n\n", program_headers.len(), program_headers);
@@ -74,6 +74,35 @@ fn main() -> Result<(), EmulatorError> {
     const A5: usize = A4 + 1;
     const A6: usize = A5 + 1;
     const A7: usize = A6 + 1;
+
+    macro_rules! branch {
+        ($raw: expr, $e: tt) => {
+            let imm = ($raw as i32 >> 7 & 0x1E)
+                | ($raw as i32 >> 22 & 0x3F << 5)
+                | ($raw as i32 & 0x100 << 2)
+                | (($raw as i32 >> 31 & 1) << 11);
+            let imm = (imm << (32 - 12)) >> (32 - 12);
+            let rs1 = $raw >> 15 & 0x1F;
+            let rs2 = $raw >> 20 & 0x1F;
+            if (read_reg!(rs1) as u32) $e (read_reg!(rs2) as u32) {
+                let temp_pc = get_pc!() as i32;
+                set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+            }
+        };
+        ($raw: expr, $e: tt, int) => {
+            let imm = ($raw as i32 >> 7 & 0x1E)
+                | ($raw as i32 >> 22 & 0x3F << 5)
+                | ($raw as i32 & 0x100 << 2)
+                | (($raw as i32 >> 31 & 1) << 11);
+            let imm = (imm << (32 - 12)) >> (32 - 12);
+            let rs1 = $raw >> 15 & 0x1F;
+            let rs2 = $raw >> 20 & 0x1F;
+            if (read_reg!(rs1) as i32) $e (read_reg!(rs2) as i32) {
+                let temp_pc = get_pc!() as i32;
+                set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+            }
+        };
+    }
 
     loop {
         let i = get_instructions(&dram, get_pc!());
@@ -134,9 +163,95 @@ fn main() -> Result<(), EmulatorError> {
                 let temp_pc = get_pc!() as i32;
                 let rd = (raw & RD) >> 7;
                 set_reg!(rd, get_pc!() + 4);
+                // println!("0x{:x}", temp_pc.wrapping_add(imm).wrapping_sub(4));
                 set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
             }
             Instructions::Jalr => {}
+            Instructions::Beq => {
+                branch!(raw, ==);
+                // let imm = (raw as i32 >> 7 & 0x1E)
+                //     | (raw as i32 >> 22 & 0x3F << 5)
+                //     | (raw as i32 & 0x100 << 2)
+                //     | ((raw as i32 >> 31 & 1) << 11);
+                // let imm = (imm << (32 - 12)) >> (32 - 12);
+                // let rs1 = raw >> 15 & 0x1F;
+                // let rs2 = raw >> 20 & 0x1F;
+                // if read_reg!(rs1) == read_reg!(rs2) {
+                //     let temp_pc = get_pc!() as i32;
+                //     set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+                // }
+            }
+            Instructions::Bne => {
+                branch!(raw, !=);
+                // let imm = (raw as i32 >> 7 & 0x1E)
+                //     | (raw as i32 >> 22 & 0x3F << 5)
+                //     | (raw as i32 & 0x100 << 2)
+                //     | ((raw as i32 >> 31 & 1) << 11);
+                // let imm = (imm << (32 - 12)) >> (32 - 12);
+                // let rs1 = raw >> 15 & 0x1F;
+                // let rs2 = raw >> 20 & 0x1F;
+                // if read_reg!(rs1) != read_reg!(rs2) {
+                //     let temp_pc = get_pc!() as i32;
+                //     set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+                // }
+            }
+            Instructions::Blt => {
+                branch!(raw, <, int);
+                // let imm = (raw as i32 >> 7 & 0x1E)
+                //     | (raw as i32 >> 22 & 0x3F << 5)
+                //     | (raw as i32 & 0x100 << 2)
+                //     | ((raw as i32 >> 31 & 1) << 11);
+                // let imm = (imm << (32 - 12)) >> (32 - 12);
+                // let rs1 = raw >> 15 & 0x1F;
+                // let rs2 = raw >> 20 & 0x1F;
+                // if (read_reg!(rs1) as i32) < (read_reg!(rs2) as i32) {
+                //     let temp_pc = get_pc!() as i32;
+                //     set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+                // }
+            }
+            Instructions::Bge => {
+                branch!(raw, >=, int);
+                // let imm = (raw as i32 >> 7 & 0x1E)
+                //     | (raw as i32 >> 22 & 0x3F << 5)
+                //     | (raw as i32 & 0x100 << 2)
+                //     | ((raw as i32 >> 31 & 1) << 11);
+                // let imm = (imm << (32 - 12)) >> (32 - 12);
+                // let rs1 = raw >> 15 & 0x1F;
+                // let rs2 = raw >> 20 & 0x1F;
+                // if (read_reg!(rs1) as i32) >= (read_reg!(rs2) as i32) {
+                //     let temp_pc = get_pc!() as i32;
+                //     set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+                // }
+            }
+            Instructions::Bltu => {
+
+                branch!(raw, <);
+                // let imm = (raw as i32 >> 7 & 0x1E)
+                //     | (raw as i32 >> 22 & 0x3F << 5)
+                //     | (raw as i32 & 0x100 << 2)
+                //     | ((raw as i32 >> 31 & 1) << 11);
+                // let imm = (imm << (32 - 12)) >> (32 - 12);
+                // let rs1 = raw >> 15 & 0x1F;
+                // let rs2 = raw >> 20 & 0x1F;
+                // if (read_reg!(rs1) as u32) < (read_reg!(rs2) as u32) {
+                //     let temp_pc = get_pc!() as i32;
+                //     set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+                // }
+            }
+            Instructions::Bgeu => {
+                branch!(raw, >=);
+                // let imm = (raw as i32 >> 7 & 0x1E)
+                //     | (raw as i32 >> 22 & 0x3F << 5)
+                //     | (raw as i32 & 0x100 << 2)
+                //     | ((raw as i32 >> 31 & 1) << 11);
+                // let imm = (imm << (32 - 12)) >> (32 - 12);
+                // let rs1 = raw >> 15 & 0x1F;
+                // let rs2 = raw >> 20 & 0x1F;
+                // if (read_reg!(rs1) as u32) >= (read_reg!(rs2) as u32) {
+                //     let temp_pc = get_pc!() as i32;
+                //     set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+                // }
+            }
         };
 
         inc_pc!();
@@ -147,9 +262,9 @@ fn main() -> Result<(), EmulatorError> {
             set_reg!(ZERO, 0);
         };
 
-        if read_reg!(A0) == 10 {
-            panic!("reg a0 test");
-        }
+        // if read_reg!(A0) == 10 {
+        //     panic!("reg a0 test");
+        // }
 
         if get_pc!() as u64 > text.section_address + text.section_size {
             panic!("end, pc: {:x}", get_pc!());
