@@ -5,7 +5,8 @@ pub enum EmulatorError {
     FileError(io::Error),
     FromUtf8(FromUtf8Error),
     StrTabError,
-    WrongHeaderProvieded
+    WrongHeaderProvieded,
+    NoTextSection
 }
 
 impl From<std::io::Error> for EmulatorError {

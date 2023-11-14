@@ -404,12 +404,24 @@ impl SectionHeadersList {
         Ok(())
     }
 
-    pub fn find_text_section(&self) -> Option<&SectionHeader> {
+    pub fn find_text_section(&self) -> Result<&SectionHeader, EmulatorError> {
         self.headers
             .iter()
             .find(|x| {
                 if let Some(name) = &x.name_str {
                     *name == ".text".into()
+                } else {
+                    false
+                }
+            })
+            .clone().ok_or(EmulatorError::NoTextSection)
+    }
+    pub fn find_data_section(&self) -> Option<&SectionHeader> {
+        self.headers
+            .iter()
+            .find(|x| {
+                if let Some(name) = &x.name_str {
+                    *name == ".data".into()
                 } else {
                     false
                 }

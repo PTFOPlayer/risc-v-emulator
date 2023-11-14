@@ -1,3 +1,4 @@
 /target
 a.out
 risc_test.o
+main.o

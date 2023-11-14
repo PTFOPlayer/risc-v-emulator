@@ -10,7 +10,7 @@ use crate::{
 };
 use error::*;
 
-const DEBUG: bool = false;
+const DEBUG: bool = true;
 
 thread_local! {
     static REGISTERS: RefCell<[u64;32]> = RefCell::new([0;32]);
@@ -19,9 +19,65 @@ thread_local! {
 
 const DRAM_SIZE: usize = 64 * 1024 * 1024;
 
+#[inline(always)]
+fn __extract_branch(raw: u32) -> (i32, u32, u32) {
+    let imm = (raw as i32 >> 7 & 0x1E)
+        | (raw as i32 >> 22 & 0x3F << 5)
+        | (raw as i32 & 0x100 << 2)
+        | ((raw as i32 >> 31 & 1) << 11);
+    let imm = (imm << (32 - 12)) >> (32 - 12);
+    let rs1 = raw >> 15 & 0x1F;
+    let rs2 = raw >> 20 & 0x1F;
+    (imm, rs1, rs2)
+}
+
+macro_rules! branch {
+    ($raw: expr, $e: tt) => {
+        let (imm, rs1, rs2) = __extract_branch($raw as u32);
+        if (read_reg!(rs1) as u32) $e (read_reg!(rs2) as u32) {
+            let temp_pc = get_pc!() as i32;
+            set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+        }
+    };
+    ($raw: expr, $e: tt, int) => {
+        let (imm, rs1, rs2) = __extract_branch($raw as u32);
+        if (read_reg!(rs1) as i32) $e (read_reg!(rs2) as i32) {
+            let temp_pc = get_pc!() as i32;
+            set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+        }
+    };
+}
+
+macro_rules! rd {
+    ($raw: expr) => {
+        ($raw as u32 >> 7) & 0x1F
+    };
+}
+
+macro_rules! rs1 {
+    ($raw: expr) => {
+        ($raw as u32 >> 15) & 0x1F
+    };
+}
+
+macro_rules! rs2 {
+    ($raw: expr) => {
+        ($raw as u32 >> 20) & 0x1F
+    };
+}
+
+macro_rules! imm {
+    (I, $raw: expr) => {
+        ($raw as u32 >> 20) & 0x7FF
+    };
+    (U, $raw: expr) => {
+        ($raw as u32 >> 12) & 0x7FFFF
+    };
+}
+
 fn main() -> Result<(), EmulatorError> {
     let mut dram = vec![0u8; DRAM_SIZE];
-    let data = std::fs::read("./a.out")?;
+    let data = std::fs::read("./test_asm/a.out")?;
 
     let elf = elf_parser::elf_parser(&data);
 
@@ -30,7 +86,7 @@ fn main() -> Result<(), EmulatorError> {
     let mut section_headers = raw_section_header_parser(&data, &elf);
     section_headers.fill_names(&data)?;
 
-    let text = section_headers.find_text_section().unwrap();
+    let text = section_headers.find_text_section()?;
 
     if DEBUG {
         println!("{:?}\n\n", elf);
@@ -39,30 +95,35 @@ fn main() -> Result<(), EmulatorError> {
             println!("{:?}", section_headers.headers[i]);
         }
         println!("{:?}", text);
-        println!("adddr: {:x?}", text.section_address);
+        println!("text addr: {:x?}", text.section_address);
     }
 
+    set_pc!(text.section_address);
     let prog_bits = extract_prog_bits(&data, text)?;
 
-    set_pc!(text.section_address);
     let mut i = text.section_address as usize;
     for e in prog_bits {
         dram[i] = *e;
         i += 1;
     }
 
-    const RD: u32 = 0b111110000000;
+    match section_headers.find_data_section() {
+        Some(res) => {
+            let mut i = res.section_address as usize;
 
-    const U_TYPE_RD: u32 = 0b111110000000;
-    const U_TYPE_IMM: u32 = !0b111111111111;
-
-    const J_TYPE_BITS_12_19: i32 = 0xff000;
-    // const J_TYPE_BIT_11: i32 = 0b10000000000000000000;
-    // const J_TYPE_BIT_20: i32 = 0b10000000000000000000000000000000;
-    // const J_TYPE_BITS_1_10: i32 = 0b01111111111100000000000000000000;
-
-    const I_TYPE_RS: u32 = 0b11111000000000000000;
-    const I_TYPE_IMM: u32 = !0b11111111111111111111;
+            let start = res.section_offset as usize;
+            let end = start + res.section_size as usize;
+            for e in &data[start..end] {
+                dram[i] = *e;
+                i += 1;
+            }
+            if DEBUG {
+                println!("data addr: {:x}", res.section_address);
+                println!("{:?}", &data[start..end]);
+            }
+        }
+        None => {}
+    }
 
     const ZERO: usize = 0;
 
@@ -75,35 +136,6 @@ fn main() -> Result<(), EmulatorError> {
     const A6: usize = A5 + 1;
     const A7: usize = A6 + 1;
 
-    macro_rules! branch {
-        ($raw: expr, $e: tt) => {
-            let imm = ($raw as i32 >> 7 & 0x1E)
-                | ($raw as i32 >> 22 & 0x3F << 5)
-                | ($raw as i32 & 0x100 << 2)
-                | (($raw as i32 >> 31 & 1) << 11);
-            let imm = (imm << (32 - 12)) >> (32 - 12);
-            let rs1 = $raw >> 15 & 0x1F;
-            let rs2 = $raw >> 20 & 0x1F;
-            if (read_reg!(rs1) as u32) $e (read_reg!(rs2) as u32) {
-                let temp_pc = get_pc!() as i32;
-                set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
-            }
-        };
-        ($raw: expr, $e: tt, int) => {
-            let imm = ($raw as i32 >> 7 & 0x1E)
-                | ($raw as i32 >> 22 & 0x3F << 5)
-                | ($raw as i32 & 0x100 << 2)
-                | (($raw as i32 >> 31 & 1) << 11);
-            let imm = (imm << (32 - 12)) >> (32 - 12);
-            let rs1 = $raw >> 15 & 0x1F;
-            let rs2 = $raw >> 20 & 0x1F;
-            if (read_reg!(rs1) as i32) $e (read_reg!(rs2) as i32) {
-                let temp_pc = get_pc!() as i32;
-                set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
-            }
-        };
-    }
-
     loop {
         let i = get_instructions(&dram, get_pc!());
         let raw = i.instruction_raw;
@@ -111,59 +143,133 @@ fn main() -> Result<(), EmulatorError> {
         match inst {
             Instructions::Unknown => panic!("unknown instruction: {}", raw),
             Instructions::Lui => {
-                let rd = (raw & U_TYPE_RD) >> 7;
-                let imm = raw & U_TYPE_IMM;
-                set_reg!(rd, imm);
+                set_reg!(rd!(raw), imm!(U, raw) << 12);
             }
             Instructions::Auipc => {
-                let rd = (raw & U_TYPE_RD) >> 7;
-                let imm = (raw & U_TYPE_IMM) + get_pc!();
-                set_reg!(rd, imm);
+                set_reg!(rd!(raw), get_pc!() + (imm!(U, raw) << 12));
             }
             Instructions::Addi => {
-                let rd = (raw & RD) >> 7;
-                let rs = (raw & I_TYPE_RS) >> 15;
-                let imm = (raw & I_TYPE_IMM) >> 20;
-                set_reg!(rd, read_reg!(rs as usize) + imm as u64);
+                let rd = rd!(raw);
+                let rs = rs1!(raw);
+                set_reg!(rd, read_reg!(rs) + imm!(I, raw) as u64);
             }
-            Instructions::Slti => {}
-            Instructions::Sltiu => {}
-            Instructions::Xori => {}
-            Instructions::Ori => {}
-            Instructions::Andi => {}
+            Instructions::Slti => {
+                let rd = rd!(raw);
+                let rs = rs1!(raw);
+
+                set_reg!(rd, (read_reg!(rs) as i64) << imm!(I, raw));
+            }
+            Instructions::Sltiu => {
+                let rd = rd!(raw);
+                let rs = rs1!(raw);
+
+                set_reg!(rd, (read_reg!(rs) as u64) << imm!(I, raw));
+            }
+            Instructions::Xori => {
+                let rd = rd!(raw);
+                let rs = rs1!(raw);
+                set_reg!(rd, read_reg!(rs) ^ imm!(I, raw) as u64);
+            }
+            Instructions::Ori => {
+                let rd = rd!(raw);
+                let rs = rs1!(raw);
+                set_reg!(rd, read_reg!(rs) | imm!(I, raw) as u64);
+            }
+            Instructions::Andi => {
+                let rd = rd!(raw);
+                let rs = rs1!(raw);
+                set_reg!(rd, read_reg!(rs) & imm!(I, raw) as u64);
+            }
             Instructions::Slli => {}
             Instructions::Srli => {}
             Instructions::Srai => {}
-            Instructions::Add => {}
-            Instructions::Sub => {}
-            Instructions::Sll => {}
-            Instructions::Slt => {}
-            Instructions::Sltu => {}
-            Instructions::Xor => {}
-            Instructions::Srl => {}
-            Instructions::Sra => {}
-            Instructions::Or => {}
-            Instructions::And => {}
+            Instructions::Add => {
+                let rd = rd!(raw);
+                let rs1 = rs1!(raw);
+                let rs2 = rs2!(raw);
+                set_reg!(rd, read_reg!(rs1) + read_reg!(rs2));
+            }
+            Instructions::Sub => {
+                let rd = rd!(raw);
+                let rs1 = rs1!(raw);
+                let rs2 = rs2!(raw);
+                set_reg!(rd, read_reg!(rs1) - read_reg!(rs2));
+            }
+            Instructions::Sll => {
+                let rd = rd!(raw);
+                let rs1 = rs1!(raw);
+                let rs2 = rs2!(raw);
+                set_reg!(rd, read_reg!(rs1) << read_reg!(rs2));
+            }
+            Instructions::Slt => {
+                let rd = rd!(raw);
+                let rs1 = rs1!(raw);
+                let rs2 = rs2!(raw);
+                set_reg!(rd, (read_reg!(rs1) as i64) < (read_reg!(rs2) as i64));
+            }
+            Instructions::Sltu => {
+                let rd = rd!(raw);
+                let rs1 = rs1!(raw);
+                let rs2 = rs2!(raw);
+                set_reg!(rd, read_reg!(rs1) < read_reg!(rs2));
+            }
+            Instructions::Xor => {
+                let rd = rd!(raw);
+                let rs1 = rs1!(raw);
+                let rs2 = rs2!(raw);
+                set_reg!(rd, read_reg!(rs1) ^ read_reg!(rs2));
+            }
+            Instructions::Srl => {
+                let rd = rd!(raw);
+                let rs1 = rs1!(raw);
+                let rs2 = rs2!(raw);
+                set_reg!(rd, read_reg!(rs1) >> read_reg!(rs2));
+            }
+            Instructions::Sra => {
+                let rd = rd!(raw);
+                let rs1 = rs1!(raw);
+                let rs2 = rs2!(raw);
+                set_reg!(rd, (read_reg!(rs1) as i64) >> (read_reg!(rs2) as i64));
+            }
+            Instructions::Or => {
+                let rd = rd!(raw);
+                let rs1 = rs1!(raw);
+                let rs2 = rs2!(raw);
+                set_reg!(rd, read_reg!(rs1) | read_reg!(rs2));
+            }
+            Instructions::And => {
+                let rd = rd!(raw);
+                let rs1 = rs1!(raw);
+                let rs2 = rs2!(raw);
+                set_reg!(rd, read_reg!(rs1) & read_reg!(rs2));
+            }
             Instructions::Fence => {}
             Instructions::FenceI => {}
             Instructions::Ecall => match (read_reg!(A0), read_reg!(A7)) {
                 (1, 64) => {
-                    println!("call")
+                    let addr = read_reg!(A1) as usize;
+                    let len = read_reg!(A2) as usize;
+                    let s = String::from_utf8_lossy(&dram[addr..addr + len]);
+                    if DEBUG {
+                        println!("{:x}", addr);
+                        println!("ecall: print\n{:?}", s);
+                    } else {
+                        println!("{}", s);
+                    }
                 }
                 _ => {}
             },
             Instructions::Ebreak => {}
             Instructions::Jal => {
-                let imm = ((raw as i32 >> (31 - 20)) & (1 << 20))
-                    | ((raw as i32 >> (21 - 1)) & 0x7fe)
-                    | ((raw as i32 >> (20 - 11)) & (1 << 11))
-                    | (raw as i32 & J_TYPE_BITS_12_19);
+                let imm = ((raw as i32 >> 11) & (1 << 20))
+                    | ((raw as i32 >> 20) & 0x7FE)
+                    | ((raw as i32 >> 9) & (1 << 11))
+                    | (raw as i32 & 0xFF000);
                 let imm = (imm << 11) >> 11;
 
                 let temp_pc = get_pc!() as i32;
-                let rd = (raw & RD) >> 7;
+                let rd = rd!(raw);
                 set_reg!(rd, get_pc!() + 4);
-                // println!("0x{:x}", temp_pc.wrapping_add(imm).wrapping_sub(4));
                 set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
             }
             Instructions::Jalr => {}
@@ -224,7 +330,6 @@ fn main() -> Result<(), EmulatorError> {
                 // }
             }
             Instructions::Bltu => {
-
                 branch!(raw, <);
                 // let imm = (raw as i32 >> 7 & 0x1E)
                 //     | (raw as i32 >> 22 & 0x3F << 5)
@@ -262,11 +367,7 @@ fn main() -> Result<(), EmulatorError> {
             set_reg!(ZERO, 0);
         };
 
-        // if read_reg!(A0) == 10 {
-        //     panic!("reg a0 test");
-        // }
-
-        if get_pc!() as u64 > text.section_address + text.section_size {
+        if get_pc!() as u64 >= text.section_address + text.section_size {
             panic!("end, pc: {:x}", get_pc!());
         }
     }
