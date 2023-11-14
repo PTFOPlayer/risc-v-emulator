@@ -2,11 +2,12 @@ mod elf_parser;
 mod error;
 mod instruction;
 mod misc;
+mod dram;
 use std::cell::RefCell;
 
 use crate::{
     elf_parser::{extract_prog_bits, program_header_parser, raw_section_header_parser},
-    instruction::{get_instructions, Instructions},
+    instruction::{get_instructions, Instructions}, dram::Dram,
 };
 use error::*;
 
@@ -17,7 +18,7 @@ thread_local! {
     static PC: RefCell<u32> = RefCell::new(0);
 }
 
-const DRAM_SIZE: usize = 64 * 1024 * 1024;
+const DRAM_SIZE: usize = 256 * 1024 * 1024;
 
 #[inline(always)]
 fn __extract_branch(raw: u32) -> (i32, u32, u32) {
@@ -76,7 +77,7 @@ macro_rules! imm {
 }
 
 fn main() -> Result<(), EmulatorError> {
-    let mut dram = vec![0u8; DRAM_SIZE];
+    let mut dram = Dram::new_dram();
     let data = std::fs::read("./test_asm/a.out")?;
 
     let elf = elf_parser::elf_parser(&data);
@@ -103,7 +104,7 @@ fn main() -> Result<(), EmulatorError> {
 
     let mut i = text.section_address as usize;
     for e in prog_bits {
-        dram[i] = *e;
+        dram.set_u8(i, *e);
         i += 1;
     }
 
@@ -114,7 +115,7 @@ fn main() -> Result<(), EmulatorError> {
             let start = res.section_offset as usize;
             let end = start + res.section_size as usize;
             for e in &data[start..end] {
-                dram[i] = *e;
+                dram.set_u8(i, *e);
                 i += 1;
             }
             if DEBUG {
@@ -140,6 +141,7 @@ fn main() -> Result<(), EmulatorError> {
         let i = get_instructions(&dram, get_pc!());
         let raw = i.instruction_raw;
         let inst = &i.instruction;
+        println!("{:?}", inst);
         match inst {
             Instructions::Unknown => panic!("unknown instruction: {}", raw),
             Instructions::Lui => {
@@ -275,87 +277,21 @@ fn main() -> Result<(), EmulatorError> {
             Instructions::Jalr => {}
             Instructions::Beq => {
                 branch!(raw, ==);
-                // let imm = (raw as i32 >> 7 & 0x1E)
-                //     | (raw as i32 >> 22 & 0x3F << 5)
-                //     | (raw as i32 & 0x100 << 2)
-                //     | ((raw as i32 >> 31 & 1) << 11);
-                // let imm = (imm << (32 - 12)) >> (32 - 12);
-                // let rs1 = raw >> 15 & 0x1F;
-                // let rs2 = raw >> 20 & 0x1F;
-                // if read_reg!(rs1) == read_reg!(rs2) {
-                //     let temp_pc = get_pc!() as i32;
-                //     set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
-                // }
             }
             Instructions::Bne => {
                 branch!(raw, !=);
-                // let imm = (raw as i32 >> 7 & 0x1E)
-                //     | (raw as i32 >> 22 & 0x3F << 5)
-                //     | (raw as i32 & 0x100 << 2)
-                //     | ((raw as i32 >> 31 & 1) << 11);
-                // let imm = (imm << (32 - 12)) >> (32 - 12);
-                // let rs1 = raw >> 15 & 0x1F;
-                // let rs2 = raw >> 20 & 0x1F;
-                // if read_reg!(rs1) != read_reg!(rs2) {
-                //     let temp_pc = get_pc!() as i32;
-                //     set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
-                // }
             }
             Instructions::Blt => {
                 branch!(raw, <, int);
-                // let imm = (raw as i32 >> 7 & 0x1E)
-                //     | (raw as i32 >> 22 & 0x3F << 5)
-                //     | (raw as i32 & 0x100 << 2)
-                //     | ((raw as i32 >> 31 & 1) << 11);
-                // let imm = (imm << (32 - 12)) >> (32 - 12);
-                // let rs1 = raw >> 15 & 0x1F;
-                // let rs2 = raw >> 20 & 0x1F;
-                // if (read_reg!(rs1) as i32) < (read_reg!(rs2) as i32) {
-                //     let temp_pc = get_pc!() as i32;
-                //     set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
-                // }
             }
             Instructions::Bge => {
                 branch!(raw, >=, int);
-                // let imm = (raw as i32 >> 7 & 0x1E)
-                //     | (raw as i32 >> 22 & 0x3F << 5)
-                //     | (raw as i32 & 0x100 << 2)
-                //     | ((raw as i32 >> 31 & 1) << 11);
-                // let imm = (imm << (32 - 12)) >> (32 - 12);
-                // let rs1 = raw >> 15 & 0x1F;
-                // let rs2 = raw >> 20 & 0x1F;
-                // if (read_reg!(rs1) as i32) >= (read_reg!(rs2) as i32) {
-                //     let temp_pc = get_pc!() as i32;
-                //     set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
-                // }
             }
             Instructions::Bltu => {
                 branch!(raw, <);
-                // let imm = (raw as i32 >> 7 & 0x1E)
-                //     | (raw as i32 >> 22 & 0x3F << 5)
-                //     | (raw as i32 & 0x100 << 2)
-                //     | ((raw as i32 >> 31 & 1) << 11);
-                // let imm = (imm << (32 - 12)) >> (32 - 12);
-                // let rs1 = raw >> 15 & 0x1F;
-                // let rs2 = raw >> 20 & 0x1F;
-                // if (read_reg!(rs1) as u32) < (read_reg!(rs2) as u32) {
-                //     let temp_pc = get_pc!() as i32;
-                //     set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
-                // }
             }
             Instructions::Bgeu => {
                 branch!(raw, >=);
-                // let imm = (raw as i32 >> 7 & 0x1E)
-                //     | (raw as i32 >> 22 & 0x3F << 5)
-                //     | (raw as i32 & 0x100 << 2)
-                //     | ((raw as i32 >> 31 & 1) << 11);
-                // let imm = (imm << (32 - 12)) >> (32 - 12);
-                // let rs1 = raw >> 15 & 0x1F;
-                // let rs2 = raw >> 20 & 0x1F;
-                // if (read_reg!(rs1) as u32) >= (read_reg!(rs2) as u32) {
-                //     let temp_pc = get_pc!() as i32;
-                //     set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
-                // }
             }
         };
 

@@ -114,6 +114,8 @@ impl Instructions {
             //calls
             0b00000000000000000000000001110011 => Self::Ecall,
             0b00000000000100000000000001110011 => Self::Ebreak,
+            // s_type
+            // 0100011 => {}
             _ => Self::Unknown,
         }
     }

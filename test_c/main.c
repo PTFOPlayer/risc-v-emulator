@@ -1,6 +1,6 @@
-#include <sys/syscall.h>
 int main()
 {
-    char * msg = "hello";
-    syscall(SYS_write, 1, msg, sizeof(msg));
+    int a = 10;
+    int b = 20;
+    int c = a+b;
 }

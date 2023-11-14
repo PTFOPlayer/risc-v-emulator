@@ -8,6 +8,5 @@ _start:
     addi a2, x0, 12
     addi a7, x0, 64
     ecall
-
 .data
     hello: .string "lorem ipsum\n"
