@@ -3,7 +3,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::DRAM_SIZE;
+const DRAM_SIZE: usize = 128 * 1024 * 1024;
 
 pub struct Dram {
     vec: Vec<u8>,
@@ -12,7 +12,7 @@ pub struct Dram {
 impl Dram {
     pub fn new_dram() -> Self {
         Self {
-            vec: vec![0; DRAM_SIZE],
+            vec: vec![0u8; DRAM_SIZE],
         }
     }
 

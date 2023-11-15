@@ -1,83 +1,43 @@
+mod dram;
 mod elf_parser;
 mod error;
 mod instruction;
 mod misc;
-mod dram;
+use crate::instruction::instruction::{get_instructions, Instructions};
 use std::cell::RefCell;
 
 use crate::{
+    dram::Dram,
     elf_parser::{extract_prog_bits, program_header_parser, raw_section_header_parser},
-    instruction::{get_instructions, Instructions}, dram::Dram,
 };
 use error::*;
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
+const P_INST: bool = false;
+const P_PC: bool = false;
 
 thread_local! {
     static REGISTERS: RefCell<[u64;32]> = RefCell::new([0;32]);
     static PC: RefCell<u32> = RefCell::new(0);
 }
 
-const DRAM_SIZE: usize = 256 * 1024 * 1024;
+// global pointer register index
+const GP: usize = 3;
 
-#[inline(always)]
-fn __extract_branch(raw: u32) -> (i32, u32, u32) {
-    let imm = (raw as i32 >> 7 & 0x1E)
-        | (raw as i32 >> 22 & 0x3F << 5)
-        | (raw as i32 & 0x100 << 2)
-        | ((raw as i32 >> 31 & 1) << 11);
-    let imm = (imm << (32 - 12)) >> (32 - 12);
-    let rs1 = raw >> 15 & 0x1F;
-    let rs2 = raw >> 20 & 0x1F;
-    (imm, rs1, rs2)
-}
+// zero register index
+const ZERO: usize = 0;
 
-macro_rules! branch {
-    ($raw: expr, $e: tt) => {
-        let (imm, rs1, rs2) = __extract_branch($raw as u32);
-        if (read_reg!(rs1) as u32) $e (read_reg!(rs2) as u32) {
-            let temp_pc = get_pc!() as i32;
-            set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
-        }
-    };
-    ($raw: expr, $e: tt, int) => {
-        let (imm, rs1, rs2) = __extract_branch($raw as u32);
-        if (read_reg!(rs1) as i32) $e (read_reg!(rs2) as i32) {
-            let temp_pc = get_pc!() as i32;
-            set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
-        }
-    };
-}
-
-macro_rules! rd {
-    ($raw: expr) => {
-        ($raw as u32 >> 7) & 0x1F
-    };
-}
-
-macro_rules! rs1 {
-    ($raw: expr) => {
-        ($raw as u32 >> 15) & 0x1F
-    };
-}
-
-macro_rules! rs2 {
-    ($raw: expr) => {
-        ($raw as u32 >> 20) & 0x1F
-    };
-}
-
-macro_rules! imm {
-    (I, $raw: expr) => {
-        ($raw as u32 >> 20) & 0x7FF
-    };
-    (U, $raw: expr) => {
-        ($raw as u32 >> 12) & 0x7FFFF
-    };
-}
+// A registers indexes
+const A0: usize = 10;
+const A1: usize = A0 + 1;
+const A2: usize = A1 + 1;
+const A3: usize = A2 + 1;
+const A4: usize = A3 + 1;
+const A5: usize = A4 + 1;
+const A6: usize = A5 + 1;
+const A7: usize = A6 + 1;
 
 fn main() -> Result<(), EmulatorError> {
-    let mut dram = Dram::new_dram();
     let data = std::fs::read("./test_asm/a.out")?;
 
     let elf = elf_parser::elf_parser(&data);
@@ -99,20 +59,27 @@ fn main() -> Result<(), EmulatorError> {
         println!("text addr: {:x?}", text.section_address);
     }
 
+    // creating dram
+    let mut dram = Dram::new_dram();
+    // setting starting PC
     set_pc!(text.section_address);
     let prog_bits = extract_prog_bits(&data, text)?;
 
+    // copying program_bits into dram
     let mut i = text.section_address as usize;
     for e in prog_bits {
         dram.set_u8(i, *e);
         i += 1;
     }
 
+    // processing data section
     match section_headers.find_data_section() {
         Some(res) => {
             let mut i = res.section_address as usize;
 
             let start = res.section_offset as usize;
+            // setting up global pointer ( start of data section )
+            set_reg!(GP, i);
             let end = start + res.section_size as usize;
             for e in &data[start..end] {
                 dram.set_u8(i, *e);
@@ -126,22 +93,16 @@ fn main() -> Result<(), EmulatorError> {
         None => {}
     }
 
-    const ZERO: usize = 0;
-
-    const A0: usize = 10;
-    const A1: usize = A0 + 1;
-    const A2: usize = A1 + 1;
-    const A3: usize = A2 + 1;
-    const A4: usize = A3 + 1;
-    const A5: usize = A4 + 1;
-    const A6: usize = A5 + 1;
-    const A7: usize = A6 + 1;
-
     loop {
         let i = get_instructions(&dram, get_pc!());
         let raw = i.instruction_raw;
         let inst = &i.instruction;
-        println!("{:?}", inst);
+        if DEBUG || P_INST {
+            println!("Inst: {:?}", inst);
+        }
+        if DEBUG || P_PC {
+            println!("PC: {:x?}", get_pc!());
+        }
         match inst {
             Instructions::Unknown => panic!("unknown instruction: {}", raw),
             Instructions::Lui => {
@@ -296,8 +257,9 @@ fn main() -> Result<(), EmulatorError> {
         };
 
         inc_pc!();
-
-        dbg_reg();
+        if DEBUG {
+            dbg_reg();
+        }
 
         if read_reg!(ZERO) != 0 {
             set_reg!(ZERO, 0);
