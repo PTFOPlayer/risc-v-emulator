@@ -3,8 +3,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-const DRAM_SIZE: usize = 128 * 1024 * 1024;
-
+const DRAM_SIZE: usize = 64 * 1024 * 1024;
 pub struct Dram {
     vec: Vec<u8>,
 }
@@ -32,6 +31,25 @@ impl Dram {
         self.vec[addr + 1] = v2;
         self.vec[addr + 2] = v3;
         self.vec[addr + 3] = v4;
+    }
+
+    pub fn get_u8(&mut self, addr: usize) -> u8 {
+        self.vec[addr]
+    }
+
+    pub fn get_u16(&mut self, addr: usize) -> u16 {
+        unsafe { transmute([self.vec[addr], self.vec[addr + 1]]) }
+    }
+
+    pub fn get_u32(&mut self, addr: usize) -> u32 {
+        unsafe {
+            transmute([
+                self.vec[addr],
+                self.vec[addr + 1],
+                self.vec[addr + 2],
+                self.vec[addr + 3],
+            ])
+        }
     }
 }
 

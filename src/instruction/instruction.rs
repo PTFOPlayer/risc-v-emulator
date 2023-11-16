@@ -19,6 +19,14 @@ pub enum Instructions {
     Xori,
     Ori,
     Andi,
+    Lb,
+    Lh,
+    Lw,
+    Lbu,
+    Lhu,
+    Sb,
+    Sh,
+    Sw,
     //R type
     Slli,
     Srli,
@@ -82,16 +90,16 @@ impl Instructions {
                 let funct3 = op >> 12 & 0x7;
                 let funct7 = op >> 24 & 0x7F;
                 match (funct7, funct3) {
-                    (0b0000000, 000) => Self::Add,
-                    (0b0100000, 000) => Self::Sub,
-                    (0b0000000, 001) => Self::Sll,
-                    (0b0000000, 010) => Self::Slt,
-                    (0b0000000, 011) => Self::Sltu,
-                    (0b0000000, 100) => Self::Xor,
-                    (0b0000000, 101) => Self::Srl,
-                    (0b0100000, 101) => Self::Sra,
-                    (0b0000000, 110) => Self::Or,
-                    (0b0000000, 111) => Self::And,
+                    (0b0000000, 0b000) => Self::Add,
+                    (0b0100000, 0b000) => Self::Sub,
+                    (0b0000000, 0b001) => Self::Sll,
+                    (0b0000000, 0b010) => Self::Slt,
+                    (0b0000000, 0b011) => Self::Sltu,
+                    (0b0000000, 0b100) => Self::Xor,
+                    (0b0000000, 0b101) => Self::Srl,
+                    (0b0100000, 0b101) => Self::Sra,
+                    (0b0000000, 0b110) => Self::Or,
+                    (0b0000000, 0b111) => Self::And,
                     (_, _) => Self::Unknown,
                 }
             }
@@ -99,12 +107,12 @@ impl Instructions {
             0b1100011 => {
                 let funct3 = op >> 12 & 0x7;
                 match funct3 {
-                    000 => Self::Beq,
-                    001 => Self::Bne,
-                    100 => Self::Blt,
-                    101 => Self::Bge,
-                    110 => Self::Bltu,
-                    111 => Self::Bgeu,
+                    0b000 => Self::Beq,
+                    0b001 => Self::Bne,
+                    0b100 => Self::Blt,
+                    0b101 => Self::Bge,
+                    0b110 => Self::Bltu,
+                    0b111 => Self::Bgeu,
                     _ => Self::Unknown,
                 }
             }
@@ -114,8 +122,28 @@ impl Instructions {
             //calls
             0b00000000000000000000000001110011 => Self::Ecall,
             0b00000000000100000000000001110011 => Self::Ebreak,
+            // loads
+            0b0000011 => {
+                let funct3 = op >> 12 & 0x7;
+                match funct3 {
+                    0b000 => Self::Lb,
+                    0b001 => Self::Lh,
+                    0b010 => Self::Lw,
+                    0b100 => Self::Lbu,
+                    0b101 => Self::Lhu,
+                    _ => Self::Unknown
+                }
+            }
             // s_type
-            // 0100011 => {}
+            0b0100011 => {
+                let funct3 = op >> 12 & 0x7;
+                match funct3 {
+                    0b000 => Self::Sb,
+                    0b001 => Self::Sh,
+                    0b010 => Self::Sw,
+                    _ => Self::Unknown
+                }
+            }
             _ => Self::Unknown,
         }
     }

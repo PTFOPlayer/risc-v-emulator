@@ -1,6 +1,6 @@
-int main()
+short main()
 {
-    int a = 10;
-    int b = 20;
-    int c = a+b;
+    short a = 10;
+    short b = 20;
+    short c = a+b;
 }

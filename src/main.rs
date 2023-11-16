@@ -3,8 +3,8 @@ mod elf_parser;
 mod error;
 mod instruction;
 mod misc;
-use crate::instruction::instruction::{get_instructions, Instructions};
-use std::cell::RefCell;
+use crate::{instruction::instruction::{get_instructions, Instructions}, misc::{dbg_reg, dbg_stack}};
+use std::{cell::RefCell, mem::transmute, process::exit};
 
 use crate::{
     dram::Dram,
@@ -15,12 +15,17 @@ use error::*;
 const DEBUG: bool = false;
 const P_INST: bool = false;
 const P_PC: bool = false;
+const P_REG: bool = false;
+const P_STACK: bool = false;
+const P_STACK_SIZE: u64 = 64;
 
 thread_local! {
-    static REGISTERS: RefCell<[u64;32]> = RefCell::new([0;32]);
-    static PC: RefCell<u32> = RefCell::new(0);
+    pub static REGISTERS: RefCell<[u64;32]> = RefCell::new([0;32]);
+    pub static PC: RefCell<u32> = RefCell::new(0);
 }
 
+//stack pointer register index
+const SP: usize = 2;
 // global pointer register index
 const GP: usize = 3;
 
@@ -104,17 +109,20 @@ fn main() -> Result<(), EmulatorError> {
             println!("PC: {:x?}", get_pc!());
         }
         match inst {
-            Instructions::Unknown => panic!("unknown instruction: {}", raw),
+            Instructions::Unknown => println!("unknown instruction: {:x}", raw),
             Instructions::Lui => {
                 set_reg!(rd!(raw), imm!(U, raw) << 12);
             }
             Instructions::Auipc => {
-                set_reg!(rd!(raw), get_pc!() + (imm!(U, raw) << 12));
+                set_reg!(
+                    rd!(raw),
+                    (get_pc!() as i64).wrapping_add((imm!(U, raw) << 12) as i64)
+                );
             }
             Instructions::Addi => {
                 let rd = rd!(raw);
                 let rs = rs1!(raw);
-                set_reg!(rd, read_reg!(rs) + imm!(I, raw) as u64);
+                set_reg!(rd, (read_reg!(rs) as i64).wrapping_add(imm!(I, raw) as i64));
             }
             Instructions::Slti => {
                 let rd = rd!(raw);
@@ -143,6 +151,71 @@ fn main() -> Result<(), EmulatorError> {
                 let rs = rs1!(raw);
                 set_reg!(rd, read_reg!(rs) & imm!(I, raw) as u64);
             }
+            Instructions::Lb => {
+                let rd = rd!(raw);
+                let rs = read_reg!(rs1!(raw));
+                let imm = imm!(I, raw);
+                let data = unsafe {
+                    transmute::<u8, i8>(dram.get_u8(rs.wrapping_add(imm as u64) as usize)) as i64
+                };
+                set_reg!(rd, data);
+            }
+            Instructions::Lh => {
+                let rd = rd!(raw);
+                let rs = read_reg!(rs1!(raw));
+                let imm = imm!(I, raw);
+                let data = unsafe {
+                    transmute::<u16, i16>(dram.get_u16(rs.wrapping_add(imm as u64) as usize))
+                };
+                set_reg!(rd, data);
+            }
+            Instructions::Lw => {
+                let rd = rd!(raw);
+                let rs = read_reg!(rs1!(raw));
+                let imm = imm!(I, raw);
+                let data = unsafe {
+                    transmute::<u32, i32>(dram.get_u32(rs.wrapping_add(imm as u64) as usize))
+                };
+                set_reg!(rd, data);
+            }
+            Instructions::Lbu => {
+                let rd = rd!(raw);
+                let rs = read_reg!(rs1!(raw));
+                let imm = imm!(I, raw);
+                let addr = (rs.wrapping_add(imm as u64)) as usize;
+                set_reg!(rd, dram.get_u8(addr));
+            }
+            Instructions::Lhu => {
+                let rd = rd!(raw);
+                let rs = read_reg!(rs1!(raw));
+                let imm = imm!(I, raw);
+                let addr = (rs.wrapping_add(imm as u64)) as usize;
+                set_reg!(rd, dram.get_u16(addr));
+            }
+            Instructions::Sb => {
+                let rs1 = read_reg!(rs1!(raw));
+                let rs2 = read_reg!(rs2!(raw));
+                let imm = imm!(S, raw);
+                let addr = (rs1 + imm as u64) as usize;
+                let val = (rs2 & 0xFF) as u8;
+                dram.set_u8(addr, val);
+            }
+            Instructions::Sh => {
+                let rs1 = read_reg!(rs1!(raw));
+                let rs2 = read_reg!(rs2!(raw));
+                let imm = imm!(S, raw);
+                let addr = (rs1 + imm as u64) as usize;
+                let val = (rs2 & 0xFFFF) as u16;
+                dram.set_u16(addr, val);
+            }
+            Instructions::Sw => {
+                let rs1 = read_reg!(rs1!(raw));
+                let rs2 = read_reg!(rs2!(raw));
+                let imm = imm!(S, raw);
+                let addr = (rs1 + imm as u64) as usize;
+                let val = (rs2 & 0xFFFFFFFF) as u32;
+                dram.set_u32(addr, val);
+            }
             Instructions::Slli => {}
             Instructions::Srli => {}
             Instructions::Srai => {}
@@ -150,13 +223,13 @@ fn main() -> Result<(), EmulatorError> {
                 let rd = rd!(raw);
                 let rs1 = rs1!(raw);
                 let rs2 = rs2!(raw);
-                set_reg!(rd, read_reg!(rs1) + read_reg!(rs2));
+                set_reg!(rd, read_reg!(rs1).wrapping_add(read_reg!(rs2)));
             }
             Instructions::Sub => {
                 let rd = rd!(raw);
                 let rs1 = rs1!(raw);
                 let rs2 = rs2!(raw);
-                set_reg!(rd, read_reg!(rs1) - read_reg!(rs2));
+                set_reg!(rd, read_reg!(rs1).wrapping_sub(read_reg!(rs2)));
             }
             Instructions::Sll => {
                 let rd = rd!(raw);
@@ -217,7 +290,7 @@ fn main() -> Result<(), EmulatorError> {
                         println!("{:x}", addr);
                         println!("ecall: print\n{:?}", s);
                     } else {
-                        println!("{}", s);
+                        print!("{}", s);
                     }
                 }
                 _ => {}
@@ -257,8 +330,11 @@ fn main() -> Result<(), EmulatorError> {
         };
 
         inc_pc!();
-        if DEBUG {
+        if DEBUG || P_REG {
             dbg_reg();
+        }
+        if DEBUG || P_STACK {
+            dbg_stack(SP, P_STACK_SIZE, &mut dram);
         }
 
         if read_reg!(ZERO) != 0 {
@@ -266,8 +342,12 @@ fn main() -> Result<(), EmulatorError> {
         };
 
         if get_pc!() as u64 >= text.section_address + text.section_size {
-            panic!("end, pc: {:x}", get_pc!());
+            println!("end");
+            println!("pc: {:x}", get_pc!());
+            println!("sp: {:x}", read_reg!(SP));
+            exit(0);
         }
+
     }
 }
 
@@ -310,17 +390,4 @@ macro_rules! read_reg {
     ($reg: expr) => {
         REGISTERS.with(|x| x.borrow()[$reg as usize])
     };
-}
-
-#[inline(always)]
-fn dbg_reg() {
-    REGISTERS.with(|x| {
-        let temp = x.borrow();
-        for i in (0..temp.len()).step_by(8) {
-            for j in 0..8 {
-                print!("x{:02}: 0x{:x} ", i + j, temp[i + j]);
-            }
-            println!();
-        }
-    })
 }

@@ -59,4 +59,7 @@ macro_rules! imm {
     (U, $raw: expr) => {
         ($raw as u32 >> 12) & 0x7FFFF
     };
+    (S, $raw:expr) => {
+        (($raw & 0xfe000000) >> 20) | (($raw >> 7) & 0x1f)
+    };
 }
