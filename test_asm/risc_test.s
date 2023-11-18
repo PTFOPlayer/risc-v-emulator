@@ -6,10 +6,13 @@ main:
 
     # test of stack
     addi sp, sp, -32
-    addi a3, x0, -1
+    addi a3, x0, 1
     sh a3, 0(sp) 
     lh a2, 0(sp)
-    
+    addi a0, x0, 10
+    addi a1, x0, 10
+    add a0, a0, a0
+    sub a0, a0, a1
 
     # Printing
     #addi a0, x0, 1

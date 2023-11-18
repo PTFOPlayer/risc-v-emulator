@@ -15,17 +15,17 @@ macro_rules! branch {
     ($raw: expr, $e: tt) => {
         use crate::instruction::instruction_macros::__extract_branch;
         let (imm, rs1, rs2) = __extract_branch($raw as u32);
-        if (read_reg!(rs1) as u32) $e (read_reg!(rs2) as u32) {
-            let temp_pc = get_pc!() as i32;
-            set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+        if (crate::read_reg!(rs1) as u32) $e (crate::read_reg!(rs2) as u32) {
+            let temp_pc = crate::get_pc!() as i32;
+            crate::set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
         }
     };
     ($raw: expr, $e: tt, int) => {
         use crate::instruction::instruction_macros::__extract_branch;
         let (imm, rs1, rs2) = __extract_branch($raw as u32);
-        if (read_reg!(rs1) as i32) $e (read_reg!(rs2) as i32) {
-            let temp_pc = get_pc!() as i32;
-            set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+        if (crate::read_reg!(rs1) as i32) $e (crate::read_reg!(rs2) as i32) {
+            let temp_pc = crate::get_pc!() as i32;
+            crate::set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
         }
     };
 }
