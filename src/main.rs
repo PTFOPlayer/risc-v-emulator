@@ -1,10 +1,13 @@
+#[allow(unused_unsafe)]
+
 mod dram;
 mod elf_parser;
 mod error;
 mod instruction;
 mod misc;
 use crate::{
-    instruction::instruction::{execute_i32, get_instructions},
+    dram::DRAM_SIZE,
+    instruction::instruction::{execute_32, get_instructions},
     misc::{dbg_reg, dbg_stack},
 };
 use std::{cell::RefCell, mem::transmute, process::exit};
@@ -15,10 +18,10 @@ use crate::{
 };
 use error::*;
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 const P_PC: bool = false;
-const P_REG: bool = true;
-const P_STACK: bool = true;
+const P_REG: bool = false;
+const P_STACK: bool = false;
 const P_STACK_SIZE: u64 = 64;
 
 thread_local! {
@@ -35,7 +38,7 @@ const GP: usize = 3;
 const ZERO: usize = 0;
 
 // A registers indexes
-const A0: usize = 10;
+const A0: usize = 10; 
 const A1: usize = A0 + 1;
 const A2: usize = A1 + 1;
 const A3: usize = A2 + 1;
@@ -49,7 +52,7 @@ fn main() -> Result<(), EmulatorError> {
 
     let elf = elf_parser::elf_parser(&data);
 
-    let program_headers = program_header_parser(&data, &elf);
+    let program_headers: Vec<elf_parser::ProgramHeader> = program_header_parser(&data, &elf);
 
     let mut section_headers = raw_section_header_parser(&data, &elf);
     section_headers.fill_names(&data)?;
@@ -70,6 +73,7 @@ fn main() -> Result<(), EmulatorError> {
     let mut dram = Dram::new_dram();
     // setting starting PC
     set_pc!(text.section_address);
+    set_reg!(SP, DRAM_SIZE);
     let prog_bits = extract_prog_bits(&data, text)?;
 
     // copying program_bits into dram
@@ -103,7 +107,7 @@ fn main() -> Result<(), EmulatorError> {
     loop {
         let raw = get_instructions(&dram, get_pc!());
 
-        execute_i32(raw, &mut dram);
+        execute_32(raw, &mut dram);
 
         if DEBUG || P_PC {
             println!("PC: {:x?}", get_pc!());
@@ -153,7 +157,8 @@ macro_rules! get_pc {
 #[macro_export]
 macro_rules! set_reg {
     ($reg: expr, $val: expr) => {
-        crate::REGISTERS.with(|x| x.borrow_mut()[$reg as usize] = $val as u64);
+        crate::REGISTERS
+            .with(|x| x.borrow_mut()[$reg as usize] = unsafe { transmute($val as i64) });
     };
 }
 

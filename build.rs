@@ -1,10 +1,10 @@
 use std::process::Command;
 
 fn main() {
-    println!("cargo:rerun-if-changed=./test_asm//risc_test.s");
+    println!("cargo:rerun-if-changed=./test_asm/risc_test.s");
 
     let mut c = Command::new("riscv64-linux-gnu-as");
-    c.args(&["-march=rv64i", "-o", "./test_asm/risc_test.o", "./test_asm/risc_test.s"]);
+    c.args(&["-march=rv64im", "-o", "./test_asm/risc_test.o", "./test_asm/risc_test.s"]);
 
     match c.output() {
         Ok(_res) => {

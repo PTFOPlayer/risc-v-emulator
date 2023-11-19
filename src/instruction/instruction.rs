@@ -1,3 +1,4 @@
+#[allow(unused_unsafe)]
 // opcode mask for type R: 0b11111110000000000111000001111111
 // opcode mask for type I:                  0b111000001111111
 // opcode mask for type S:                  0b111000001111111
@@ -12,7 +13,7 @@ pub fn get_instructions(prog_bits: &[u8], pc: u32) -> u32 {
     fast_transmute!(<0, u32>, [prog_bits[pc+0], prog_bits[pc+1], prog_bits[pc+2], prog_bits[pc+3]])
 }
 
-pub fn execute_i32(op: u32, dram: &mut Dram) {
+pub fn execute_32(op: u32, dram: &mut Dram) {
     let raw = op;
     let instruction_type = op & 0x7F;
     match instruction_type {
@@ -59,7 +60,9 @@ pub fn execute_i32(op: u32, dram: &mut Dram) {
                 0b000 => {
                     let rd = rd!(raw);
                     let rs = rs1!(raw);
-                    set_reg!(rd, (read_reg!(rs)).wrapping_add(imm!(I, raw) as u64));
+                    let mut imm = imm!(I, raw) as i32;
+                    imm = (imm << 21) >> 21;
+                    set_reg!(rd, (read_reg!(rs) as i64).wrapping_add(imm as i64));
                 }
                 // Slti
                 0b010 => {
@@ -173,7 +176,33 @@ pub fn execute_i32(op: u32, dram: &mut Dram) {
                     let rs2 = rs2!(raw);
                     set_reg!(rd, read_reg!(rs1) & read_reg!(rs2));
                 }
+                // M extension
+                // Mul
+                (0000001, 0b000) => {
+                    let rd = rd!(raw);
+                    let rs1: i64 = unsafe { transmute(read_reg!(rs1!(raw))) };
+                    let rs2: i64 = unsafe { transmute(read_reg!(rs2!(raw))) };
+                    // println!("Mul ->rs1: {}, rs2: {}, res: {}", rs1, rs2, rs1.wrapping_mul(rs2));
+                    set_reg!(rd, rs1.wrapping_mul(rs2));
+                }
+                // Div
+                (0000001, 0b100) => {
+                    let rd = rd!(raw);
+                    let rs1: i64 = unsafe { transmute(read_reg!(rs1!(raw))) };
+                    let rs2: i64 = unsafe { transmute(read_reg!(rs2!(raw))) };
 
+                    // println!("Div -> rs1: {}, rs2: {}, res: {}", rs1, rs2, rs1.wrapping_div(rs2));
+                    set_reg!(rd, rs1.wrapping_div(rs2));
+                }
+                // Rem
+                (0000001, 0b110) => {
+                    let rd = rd!(raw);
+                    let rs1: i64 = unsafe { transmute(read_reg!(rs1!(raw))) };
+                    let rs2: i64 = unsafe { transmute(read_reg!(rs2!(raw))) };
+
+                    // println!("Rem -> rs1: {}, rs2: {}, res: {}", rs1, rs2, rs1.wrapping_rem(rs2));
+                    set_reg!(rd, rs1.wrapping_rem(rs2));
+                }
                 // error?
                 (_, _) => {
                     panic!("unknown instruction")
@@ -235,7 +264,7 @@ pub fn execute_i32(op: u32, dram: &mut Dram) {
                 }
             }
             _ => {
-                panic!("unknown instruction")
+                panic!("unknown syscall");
             }
         },
         // Ebreak
@@ -293,7 +322,7 @@ pub fn execute_i32(op: u32, dram: &mut Dram) {
                 }
                 // error?
                 _ => {
-                    panic!("unknown instruction")
+                    panic!("unknown instruction: {:x}", op);
                 }
             }
         }
@@ -331,13 +360,13 @@ pub fn execute_i32(op: u32, dram: &mut Dram) {
 
                 // error?
                 _ => {
-                    panic!("unknown instruction")
+                    panic!("unknown instruction: {:x}", op);
                 }
             }
         }
         // error?
         _ => {
-            panic!("unknown instruction")
+            panic!("unknown instruction: {:x}", op);
         }
     }
 

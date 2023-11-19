@@ -3,7 +3,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-const DRAM_SIZE: usize = 64 * 1024 * 1024;
+pub const DRAM_SIZE: usize = 64 * 1024 * 1024;
 pub struct Dram {
     vec: Vec<u8>,
 }

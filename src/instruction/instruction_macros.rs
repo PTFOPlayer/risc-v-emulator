@@ -1,12 +1,14 @@
 #[inline(always)]
 pub fn __extract_branch(raw: u32) -> (i32, u32, u32) {
-    let imm = (raw as i32 >> 7 & 0x1E)
-        | (raw as i32 >> 22 & 0x3F << 5)
-        | (raw as i32 & 0x100 << 2)
-        | ((raw as i32 >> 31 & 1) << 11);
-    let imm = (imm << (32 - 12)) >> (32 - 12);
+    let imm = ((raw & 0x80000000u32) >> 19)
+        | ((raw & 0x80) << 4)
+        | ((raw >> 20) & 0x7e0)
+        | ((raw >> 7) & 0x1e);
+    let imm = imm as i32;
+    let imm = (imm << (31 - 12)) >> (31 - 12);
     let rs1 = raw >> 15 & 0x1F;
     let rs2 = raw >> 20 & 0x1F;
+
     (imm, rs1, rs2)
 }
 
@@ -16,16 +18,16 @@ macro_rules! branch {
         use crate::instruction::instruction_macros::__extract_branch;
         let (imm, rs1, rs2) = __extract_branch($raw as u32);
         if (crate::read_reg!(rs1) as u32) $e (crate::read_reg!(rs2) as u32) {
-            let temp_pc = crate::get_pc!() as i32;
-            crate::set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+            let temp_pc = crate::get_pc!() as i64;
+            crate::set_pc!(temp_pc.wrapping_add(imm  as i64).wrapping_sub(4));
         }
     };
     ($raw: expr, $e: tt, int) => {
         use crate::instruction::instruction_macros::__extract_branch;
         let (imm, rs1, rs2) = __extract_branch($raw as u32);
         if (crate::read_reg!(rs1) as i32) $e (crate::read_reg!(rs2) as i32) {
-            let temp_pc = crate::get_pc!() as i32;
-            crate::set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
+            let temp_pc = crate::get_pc!() as i64;
+            crate::set_pc!(temp_pc.wrapping_add(imm as i64).wrapping_sub(4));
         }
     };
 }
