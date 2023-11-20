@@ -51,7 +51,16 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
             set_pc!(temp_pc.wrapping_add(imm).wrapping_sub(4));
         }
         // Jalr
-        0b1100111 => {}
+        0b1100111 => {
+            let imm = imm!(I, raw);
+            let rs1 = read_reg!(rs1!(raw)) as i64;
+            let mut imm = imm as i32;
+            imm = (imm << 20) >> 20;
+
+            let rd = rd!(raw);
+            set_reg!(rd, get_pc!() + 4);
+            set_pc!(rs1.wrapping_add(imm as i64).wrapping_sub(4));
+        }
         // i_type
         0b0010011 => {
             let funct = op >> 12 & 0x7;
@@ -67,16 +76,21 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                 // Slti
                 0b010 => {
                     let rd = rd!(raw);
-                    let rs = rs1!(raw);
-
-                    set_reg!(rd, (read_reg!(rs) as i64) << imm!(I, raw));
+                    let rs = read_reg!(rs1!(raw));
+                    let mut imm = imm!(I, raw) as i32;
+                    imm = (imm << 21) >> 21;
+                    if (rs as i64) < imm as i64 {
+                        set_reg!(rd, 1);
+                    }
                 }
                 // Sltiu
                 0b011 => {
                     let rd = rd!(raw);
-                    let rs = rs1!(raw);
-
-                    set_reg!(rd, (read_reg!(rs) as u64) << imm!(I, raw));
+                    let rs = read_reg!(rs1!(raw));
+                    let imm = imm!(I, raw);
+                    if (rs as u64) < imm as u64 {
+                        set_reg!(rd, 1);
+                    }
                 }
                 // Xori
                 0b100 => {
@@ -200,7 +214,7 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     let rs1: i64 = unsafe { transmute(read_reg!(rs1!(raw))) };
                     let rs2: i64 = unsafe { transmute(read_reg!(rs2!(raw))) };
 
-                    // println!("Rem -> rs1: {}, rs2: {}, res: {}", rs1, rs2, rs1.wrapping_rem(rs2));
+                    println!("Rem -> rs1: {}, rs2: {}, res: {}", rs1, rs2, rs1.wrapping_rem(rs2));
                     set_reg!(rd, rs1.wrapping_rem(rs2));
                 }
                 // error?

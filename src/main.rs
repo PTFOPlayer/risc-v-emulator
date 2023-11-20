@@ -1,5 +1,4 @@
 #[allow(unused_unsafe)]
-
 mod dram;
 mod elf_parser;
 mod error;
@@ -38,7 +37,7 @@ const GP: usize = 3;
 const ZERO: usize = 0;
 
 // A registers indexes
-const A0: usize = 10; 
+const A0: usize = 10;
 const A1: usize = A0 + 1;
 const A2: usize = A1 + 1;
 const A3: usize = A2 + 1;
@@ -96,6 +95,7 @@ fn main() -> Result<(), EmulatorError> {
                 dram.set_u8(i, *e);
                 i += 1;
             }
+
             if DEBUG {
                 println!("data addr: {:x}", res.section_address);
                 println!("{:?}", &data[start..end]);

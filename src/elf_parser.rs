@@ -414,7 +414,8 @@ impl SectionHeadersList {
                     false
                 }
             })
-            .clone().ok_or(EmulatorError::NoTextSection)
+            .clone()
+            .ok_or(EmulatorError::NoTextSection)
     }
     pub fn find_data_section(&self) -> Option<&SectionHeader> {
         self.headers
