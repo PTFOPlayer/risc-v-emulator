@@ -19,11 +19,26 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
     match instruction_type {
         // shifts
         // Slli
-        0b00000000000000000001000000010011 => {}
+        0b00000000000000000001000000010011 => {
+            let shamt = imm!(I, raw) & 0x1f;
+            let rs = rs1!(raw);
+            let rd = rd!(raw);
+            set_reg!(rd, read_reg!(rs) << shamt);
+        }
         // Srli
-        0b00000000000000000101000000010011 => {}
+        0b00000000000000000101000000010011 => {
+            let shamt = imm!(I, raw) & 0x1f;
+            let rs = rs1!(raw);
+            let rd = rd!(raw);
+            set_reg!(rd, read_reg!(rs) >> shamt);
+        }
         // Srai
-        0b01000000000000000101000000010011 => {}
+        0b01000000000000000101000000010011 => {
+            let shamt = imm!(I, raw) & 0x1f;
+            let rs = rs1!(raw);
+            let rd = rd!(raw);
+            set_reg!(rd, t_i64!(read_reg!(rs)) << shamt);
+        }
         // u_type
         // Lui
         0b0110111 => {
@@ -214,7 +229,7 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     let rs1: i64 = unsafe { transmute(read_reg!(rs1!(raw))) };
                     let rs2: i64 = unsafe { transmute(read_reg!(rs2!(raw))) };
 
-                    println!("Rem -> rs1: {}, rs2: {}, res: {}", rs1, rs2, rs1.wrapping_rem(rs2));
+                    // println!("Rem -> rs1: {}, rs2: {}, res: {}", rs1, rs2, rs1.wrapping_rem(rs2));
                     set_reg!(rd, rs1.wrapping_rem(rs2));
                 }
                 // error?

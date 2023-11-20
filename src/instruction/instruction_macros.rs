@@ -65,3 +65,17 @@ macro_rules! imm {
         (($raw & 0xfe000000) >> 20) | (($raw >> 7) & 0x1f)
     };
 }
+
+#[macro_export]
+macro_rules! t_i64 {
+    ($val: expr) => {
+        unsafe { std::mem::transmute::<u64, i64>($val) }
+    };
+}
+
+#[macro_export]
+macro_rules! t_u64 {
+    ($val: expr) => {
+        unsafe{std::mem::transmute::<i64, u64>(read_reg!$val)}
+    };
+}

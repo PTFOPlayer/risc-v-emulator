@@ -14,11 +14,13 @@ main:
 
 
 ## numbers to be printed
-    addi    a0, x0, -10
-    sh      a0, 4(sp)
-    lh      a0, 4(sp)
+    addi    a0, x0, -1024
+    addi    a0, a0, -1024
+    addi    a0, a0, -1024
+    sw      a0, 4(sp)
+    lw      a0, 4(sp)
 ## base
-    addi    a1, x0, 10
+    addi    a1, x0, 0
     beq     a1, x0, f_0
 
     addi    sp, sp, -1024
@@ -40,13 +42,14 @@ f_0:
     addi    a0, x0, 1
     addi    a7, x0, 64
     la      a1, error
-    addi    a2, x0, 16
+    addi    a2, x0, 17
     ecall
+    jal end
 
 print_number: # a0: number to be displayed, a1: base of number
     add     t0, x0, a0
     add     t1, x0, a1
-    sw      a7, 2(sp)
+    sw      a7, 4(sp)
     add     t4, x0, sp
     add     t5, x0, x0
 l_0:
@@ -63,6 +66,9 @@ l_0:
 
     addi    a0, x0, 1
     addi    a7, x0, 64
+
+
+    addi    t6, x0, 1
 l_1:
 # getting value from stack
     addi    t4, t4, 4
@@ -70,11 +76,13 @@ l_1:
     lb      t2, 0(t4)
 
     bge     t2, x0, non_0          # if t2 > x0 then non_0
+    beq     t6, x0, no_minus
+    addi    t6, x0, 0
     la      a1, minus
     addi    a2, x0, 1
     ecall
-    add     t0, t0, t2
-    sub     t2, x0, t0
+no_minus:
+    sub     t2, x0, t2
 non_0:
 
 # syscall to print single number
@@ -84,7 +92,7 @@ non_0:
     ecall
 
     bne     t5, x0, l_1            # if t0 != 0
-    lw      a7, 2(sp)
+    lw      a7, 4(sp)
     ret
 
 # end of program
@@ -97,8 +105,7 @@ numbers:
 nl:
     .string "\n"
 error:
-.string "error:
-    base    is 0\n"
+.string "error: base is 0\n"
 
 
 # Printing

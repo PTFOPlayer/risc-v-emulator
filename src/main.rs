@@ -165,6 +165,6 @@ macro_rules! set_reg {
 #[macro_export]
 macro_rules! read_reg {
     ($reg: expr) => {
-        crate::REGISTERS.with(|x| x.borrow()[$reg as usize])
+        crate::REGISTERS.with(|x| x.borrow()[$reg as usize] as u64)
     };
 }
