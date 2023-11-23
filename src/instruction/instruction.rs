@@ -1,4 +1,4 @@
-#[allow(unused_unsafe)]
+#![allow(unused_unsafe)]
 // opcode mask for type R: 0b11111110000000000111000001111111
 // opcode mask for type I:                  0b111000001111111
 // opcode mask for type S:                  0b111000001111111
@@ -83,10 +83,10 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                 // Addi
                 0b000 => {
                     let rd = rd!(raw);
-                    let rs = rs1!(raw);
+                    let rs = t_i64!(read_reg!(rs1!(raw)));
                     let mut imm = imm!(I, raw) as i32;
                     imm = (imm << 21) >> 21;
-                    set_reg!(rd, (read_reg!(rs) as i64).wrapping_add(imm as i64));
+                    set_reg!(rd, rs.wrapping_add(imm as i64));
                 }
                 // Slti
                 0b010 => {
@@ -138,9 +138,9 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                 // Add
                 (0b0000000, 0b000) => {
                     let rd = rd!(raw);
-                    let rs1 = rs1!(raw);
-                    let rs2 = rs2!(raw);
-                    set_reg!(rd, read_reg!(rs1).wrapping_add(read_reg!(rs2)));
+                    let rs1 = t_i64!(read_reg!(rs1!(raw)));
+                    let rs2 = t_i64!(read_reg!(rs2!(raw)));
+                    set_reg!(rd, rs1.wrapping_add(rs2));
                 }
                 // Sub
                 (0b0100000, 0b000) => {
@@ -209,27 +209,37 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                 // Mul
                 (0000001, 0b000) => {
                     let rd = rd!(raw);
-                    let rs1: i64 = unsafe { transmute(read_reg!(rs1!(raw))) };
-                    let rs2: i64 = unsafe { transmute(read_reg!(rs2!(raw))) };
+                    let rs1 = t_i64!(read_reg!(rs1!(raw)));
+                    let rs2 = t_i64!(read_reg!(rs2!(raw)));
                     // println!("Mul ->rs1: {}, rs2: {}, res: {}", rs1, rs2, rs1.wrapping_mul(rs2));
                     set_reg!(rd, rs1.wrapping_mul(rs2));
                 }
                 // Div
                 (0000001, 0b100) => {
                     let rd = rd!(raw);
-                    let rs1: i64 = unsafe { transmute(read_reg!(rs1!(raw))) };
-                    let rs2: i64 = unsafe { transmute(read_reg!(rs2!(raw))) };
+                    let rs1: i64 = t_i64!(read_reg!(rs1!(raw)));
+                    let rs2: i64 = t_i64!(read_reg!(rs2!(raw)));
 
-                    // println!("Div -> rs1: {}, rs2: {}, res: {}", rs1, rs2, rs1.wrapping_div(rs2));
+                    println!(
+                        "Div -> rs1: {}, rs2: {}, res: {}",
+                        rs1,
+                        rs2,
+                        rs1.wrapping_div(rs2)
+                    );
                     set_reg!(rd, rs1.wrapping_div(rs2));
                 }
                 // Rem
                 (0000001, 0b110) => {
                     let rd = rd!(raw);
-                    let rs1: i64 = unsafe { transmute(read_reg!(rs1!(raw))) };
-                    let rs2: i64 = unsafe { transmute(read_reg!(rs2!(raw))) };
+                    let rs1: i64 = t_i64!(read_reg!(rs1!(raw)));
+                    let rs2: i64 = t_i64!(read_reg!(rs2!(raw)));
 
-                    // println!("Rem -> rs1: {}, rs2: {}, res: {}", rs1, rs2, rs1.wrapping_rem(rs2));
+                    println!(
+                        "Rem -> rs1: {}, rs2: {}, res: {}",
+                        rs1,
+                        rs2,
+                        rs1.wrapping_rem(rs2)
+                    );
                     set_reg!(rd, rs1.wrapping_rem(rs2));
                 }
                 // error?
@@ -333,6 +343,16 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     };
                     set_reg!(rd, data);
                 }
+
+                0b011 => {
+                    let rd = rd!(raw);
+                    let rs = read_reg!(rs1!(raw));
+                    let imm = imm!(I, raw);
+                    let data = unsafe {
+                        transmute::<u64, i64>(dram.get_u64(rs.wrapping_add(imm as u64) as usize))
+                    };
+                    set_reg!(rd, data);
+                }
                 // Lbu
                 0b100 => {
                     let rd = rd!(raw);
@@ -385,6 +405,14 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     let addr = (rs1 + imm as u64) as usize;
                     let val = (rs2 & 0xFFFFFFFF) as u32;
                     dram.set_u32(addr, val);
+                }
+
+                0b011 => {
+                    let rs1 = read_reg!(rs1!(raw));
+                    let rs2 = read_reg!(rs2!(raw));
+                    let imm = imm!(S, raw) as u64;
+                    let addr = (rs1 + imm) as usize;
+                    dram.set_u64(addr, rs2);
                 }
 
                 // error?

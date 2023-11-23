@@ -1,3 +1,5 @@
+#![allow(unused_unsafe)]
+
 #[inline(always)]
 pub fn __extract_branch(raw: u32) -> (i32, u32, u32) {
     let imm = ((raw & 0x80000000u32) >> 19)
@@ -17,7 +19,8 @@ macro_rules! branch {
     ($raw: expr, $e: tt) => {
         use crate::instruction::instruction_macros::__extract_branch;
         let (imm, rs1, rs2) = __extract_branch($raw as u32);
-        if (crate::read_reg!(rs1) as u32) $e (crate::read_reg!(rs2) as u32) {
+        
+        if (crate::read_reg!(rs1)) $e (crate::read_reg!(rs2)) {
             let temp_pc = crate::get_pc!() as i64;
             crate::set_pc!(temp_pc.wrapping_add(imm  as i64).wrapping_sub(4));
         }
@@ -25,7 +28,7 @@ macro_rules! branch {
     ($raw: expr, $e: tt, int) => {
         use crate::instruction::instruction_macros::__extract_branch;
         let (imm, rs1, rs2) = __extract_branch($raw as u32);
-        if (crate::read_reg!(rs1) as i32) $e (crate::read_reg!(rs2) as i32) {
+        if (t_i64!(crate::read_reg!(rs1))) $e (t_i64!(crate::read_reg!(rs2))) {
             let temp_pc = crate::get_pc!() as i64;
             crate::set_pc!(temp_pc.wrapping_add(imm as i64).wrapping_sub(4));
         }
@@ -76,6 +79,6 @@ macro_rules! t_i64 {
 #[macro_export]
 macro_rules! t_u64 {
     ($val: expr) => {
-        unsafe{std::mem::transmute::<i64, u64>(read_reg!$val)}
+        unsafe{std::mem::transmute::<i64, u64>($val)}
     };
 }

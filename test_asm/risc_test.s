@@ -3,7 +3,7 @@
 
     .text
 main:
-    addi    sp, sp, -32
+    addi    sp, sp, -64
 # setting up arguments for syscall
     addi    a0, x0, 1
     addi    a7, x0, 64
@@ -14,14 +14,21 @@ main:
 
 
 ## numbers to be printed
-    addi    a0, x0, -1024
-    addi    a0, a0, -1024
-    addi    a0, a0, -1024
-    sw      a0, 4(sp)
-    lw      a0, 4(sp)
+    addi    t0, x0, 62             # its actualy -2 ^ 63
+    addi    a0, x0, 2
+l_2:
+    addi    t0, t0, -1
+    add     a0, a0, a0
+    bne     t0, x0, l_2
+    
+    addi    a0, a0, -1
+    sd      a0, 4(sp)
+    ld      a0, 4(sp)
 ## base
-    addi    a1, x0, 0
+    addi    a1, x0, 10
     beq     a1, x0, f_0
+    addi    t0, x0, 1
+    beq     a1, t0, f_0
 
     addi    sp, sp, -1024
     jal     print_number           # a0: number to be displayed, a1: base of number
@@ -44,7 +51,7 @@ f_0:
     la      a1, error
     addi    a2, x0, 17
     ecall
-    jal end
+    jal     end
 
 print_number: # a0: number to be displayed, a1: base of number
     add     t0, x0, a0
@@ -105,7 +112,7 @@ numbers:
 nl:
     .string "\n"
 error:
-.string "error: base is 0\n"
+    .string "error base is 0"
 
 
 # Printing

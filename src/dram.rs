@@ -33,6 +33,13 @@ impl Dram {
         self.vec[addr + 3] = v4;
     }
 
+    pub fn set_u64(&mut self, addr: usize, val: u64) {
+        let a: [u8; 8] = unsafe { transmute(val) };
+        for i in 0..8 {
+            self.vec[addr + i] = a[i];
+        }
+    }
+
     pub fn get_u8(&mut self, addr: usize) -> u8 {
         self.vec[addr]
     }
@@ -48,6 +55,21 @@ impl Dram {
                 self.vec[addr + 1],
                 self.vec[addr + 2],
                 self.vec[addr + 3],
+            ])
+        }
+    }
+
+    pub fn get_u64(&mut self, addr: usize) -> u64 {
+        unsafe {
+            transmute([
+                self.vec[addr],
+                self.vec[addr + 1],
+                self.vec[addr + 2],
+                self.vec[addr + 3],
+                self.vec[addr + 4],
+                self.vec[addr + 5],
+                self.vec[addr + 6],
+                self.vec[addr + 7],
             ])
         }
     }
