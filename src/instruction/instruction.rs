@@ -17,28 +17,6 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
     let raw = op;
     let instruction_type = op & 0x7F;
     match instruction_type {
-        // shifts
-        // Slli
-        0b00000000000000000001000000010011 => {
-            let shamt = imm!(I, raw) & 0x1f;
-            let rs = rs1!(raw);
-            let rd = rd!(raw);
-            set_reg!(rd, read_reg!(rs) << shamt);
-        }
-        // Srli
-        0b00000000000000000101000000010011 => {
-            let shamt = imm!(I, raw) & 0x1f;
-            let rs = rs1!(raw);
-            let rd = rd!(raw);
-            set_reg!(rd, read_reg!(rs) >> shamt);
-        }
-        // Srai
-        0b01000000000000000101000000010011 => {
-            let shamt = imm!(I, raw) & 0x1f;
-            let rs = rs1!(raw);
-            let rd = rd!(raw);
-            set_reg!(rd, t_i64!(read_reg!(rs)) << shamt);
-        }
         // u_type
         // Lui
         0b0110111 => {
@@ -76,10 +54,41 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
             set_reg!(rd, get_pc!() + 4);
             set_pc!(rs1.wrapping_add(imm as i64).wrapping_sub(4));
         }
-        // i_type
+        // i_type RV32I+RV64I
         0b0010011 => {
             let funct = op >> 12 & 0x7;
             match funct {
+                0b101 | 0b001 => {
+                    let s_funct = op >> 24 & 0x3f;
+                    match (s_funct, funct) {
+                        // Slli
+                        (0b000000, 0b001) => {
+                            let shamt = imm!(I, raw) & 0x1f;
+                            let rs = rs1!(raw);
+                            let rd = rd!(raw);
+                            set_reg!(rd, read_reg!(rs) << shamt);
+                        }
+                        // Srli
+                        (0b000000, 0b101) => {
+                            let shamt = imm!(I, raw) & 0x1f;
+                            let rs = rs1!(raw);
+                            let rd = rd!(raw);
+                            set_reg!(rd, read_reg!(rs) >> shamt);
+                        }
+                        // Srai
+                        (0b010000, 0b101) => {
+                            let shamt = imm!(I, raw) & 0x1f;
+                            let rs = rs1!(raw);
+                            let rd = rd!(raw);
+                            set_reg!(rd, t_i64!(read_reg!(rs)) << shamt);
+                        }
+
+                        // error?
+                        _ => {
+                            println!("unknown instruction occured in i_type branch");
+                        }
+                    }
+                }
                 // Addi
                 0b000 => {
                     let rd = rd!(raw);
@@ -127,7 +136,25 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                 }
 
                 // error?
-                _ => {}
+                _ => {
+                    println!("unknown instruction occured in i_type branch");
+                }
+            }
+        }
+        // i_type RV64I
+        0b0011011 => {
+            let funct = op >> 12 & 0x7;
+            match funct {
+                // addiw
+                0b000 => {
+                    let rd = rd!(raw);
+                    let rs = t_i32!((read_reg!(rs1!(raw)) & 0xFFFFFFFF) as u32);
+                    let mut imm = imm!(I, raw) as i32;
+                    imm = (imm << 21) >> 21;
+                    set_reg!(rd, rs.wrapping_add(imm));
+                }
+                // error?
+                _ => {println!("unknown instruction occured in i_type RV64I branch");}
             }
         }
         // r_type
@@ -205,8 +232,7 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     let rs2 = rs2!(raw);
                     set_reg!(rd, read_reg!(rs1) & read_reg!(rs2));
                 }
-                // M extension
-                // Mul
+                // Mul RV32M+RV64M
                 (0000001, 0b000) => {
                     let rd = rd!(raw);
                     let rs1 = t_i64!(read_reg!(rs1!(raw)));
@@ -214,7 +240,7 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     // println!("Mul ->rs1: {}, rs2: {}, res: {}", rs1, rs2, rs1.wrapping_mul(rs2));
                     set_reg!(rd, rs1.wrapping_mul(rs2));
                 }
-                // Div
+                // Div  RV32M+RV64M
                 (0000001, 0b100) => {
                     let rd = rd!(raw);
                     let rs1: i64 = t_i64!(read_reg!(rs1!(raw)));
@@ -228,7 +254,7 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     );
                     set_reg!(rd, rs1.wrapping_div(rs2));
                 }
-                // Rem
+                // Rem  RV32M+RV64M
                 (0000001, 0b110) => {
                     let rd = rd!(raw);
                     let rs1: i64 = t_i64!(read_reg!(rs1!(raw)));
@@ -285,9 +311,13 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
         }
         // fence
         // Fence
-        0b00000000000000000000000000001111 => {}
+        0b00000000000000000000000000001111 => {
+            println!("fence");
+        }
         // FenceI
-        0b00000000000000000001000000001111 => {}
+        0b00000000000000000001000000001111 => {
+            println!("fence.i");
+        }
         //calls
         // Ecall
         0b00000000000000000000000001110011 => match (read_reg!(A0), read_reg!(A7)) {

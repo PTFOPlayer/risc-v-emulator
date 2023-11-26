@@ -82,3 +82,17 @@ macro_rules! t_u64 {
         unsafe{std::mem::transmute::<i64, u64>($val)}
     };
 }
+
+#[macro_export]
+macro_rules! t_i32 {
+    ($val: expr) => {
+        unsafe { std::mem::transmute::<u32, i32>($val) }
+    };
+}
+
+#[macro_export]
+macro_rules! t_u32 {
+    ($val: expr) => {
+        unsafe{std::mem::transmute::<i32, u32>($val)}
+    };
+}

@@ -3,7 +3,7 @@
 
     .text
 main:
-    addi    sp, sp, -64
+    addi    sp, sp, -32
 # setting up arguments for syscall
     addi    a0, x0, 1
     addi    a7, x0, 64
@@ -14,14 +14,7 @@ main:
 
 
 ## numbers to be printed
-    addi    t0, x0, 62             # its actualy -2 ^ 63
-    addi    a0, x0, 2
-l_2:
-    addi    t0, t0, -1
-    add     a0, a0, a0
-    bne     t0, x0, l_2
-    
-    addi    a0, a0, -1
+    addi    a0, x0, 12
     sd      a0, 4(sp)
     ld      a0, 4(sp)
 ## base
@@ -30,9 +23,7 @@ l_2:
     addi    t0, x0, 1
     beq     a1, t0, f_0
 
-    addi    sp, sp, -1024
     jal     print_number           # a0: number to be displayed, a1: base of number
-    addi    sp, sp, 1024
 # new line
 
     addi    a0, x0, 1
@@ -54,9 +45,9 @@ f_0:
     jal     end
 
 print_number: # a0: number to be displayed, a1: base of number
+    addi    sp, sp, -128
     add     t0, x0, a0
     add     t1, x0, a1
-    sw      a7, 4(sp)
     add     t4, x0, sp
     add     t5, x0, x0
 l_0:
@@ -99,7 +90,7 @@ non_0:
     ecall
 
     bne     t5, x0, l_1            # if t0 != 0
-    lw      a7, 4(sp)
+    addi    sp, sp, 128
     ret
 
 # end of program
