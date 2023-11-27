@@ -84,9 +84,7 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                         }
 
                         // error?
-                        _ => {
-                            println!("unknown instruction occured in i_type branch");
-                        }
+                        _ => panic!("unknown instruction occured in i_type branch"),
                     }
                 }
                 // Addi
@@ -136,16 +134,44 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                 }
 
                 // error?
-                _ => {
-                    println!("unknown instruction occured in i_type branch");
-                }
+                _ => panic!("unknown instruction occured in i_type branch"),
             }
         }
         // i_type RV64I
         0b0011011 => {
             let funct = op >> 12 & 0x7;
+
             match funct {
-                // addiw
+                0b101 | 0b001 => {
+                    let s_funct = op >> 24 & 0x3f;
+                    match (s_funct, funct) {
+                        // Slliw
+                        (0b000000, 0b001) => {
+                            let shamt = imm!(I, raw) & 0x1f;
+                            let rs = t_i32!((read_reg!(rs1!(raw)) & 0xFFFFFFFF) as u32);
+                            let rd = rd!(raw);
+                            set_reg!(rd, rs.wrapping_shl(shamt));
+                        }
+                        // Srliw
+                        (0b000000, 0b101) => {
+                            let shamt = imm!(I, raw) & 0x1f;
+                            let rs = t_i32!((read_reg!(rs1!(raw)) & 0xFFFFFFFF) as u32);
+                            let rd = rd!(raw);
+                            set_reg!(rd, rs.wrapping_shr(shamt));
+                        }
+                        // Sraiw
+                        (0b010000, 0b101) => {
+                            let shamt = imm!(I, raw) & 0x1f;
+                            let rs = t_i32!((read_reg!(rs1!(raw)) & 0xFFFFFFFF) as u32);
+                            let rd = rd!(raw);
+                            set_reg!(rd, rs.wrapping_shr(shamt));
+                        }
+
+                        // error?
+                        _ => panic!("unknown instruction occured in i_type branch"),
+                    }
+                }
+                // Addiw
                 0b000 => {
                     let rd = rd!(raw);
                     let rs = t_i32!((read_reg!(rs1!(raw)) & 0xFFFFFFFF) as u32);
@@ -154,10 +180,10 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     set_reg!(rd, rs.wrapping_add(imm));
                 }
                 // error?
-                _ => {println!("unknown instruction occured in i_type RV64I branch");}
+                _ => panic!("unknown instruction occured in i_type RV64I branch"),
             }
         }
-        // r_type
+        // r_type RV32I
         0b0110011 => {
             let funct3 = op >> 12 & 0x7;
             let funct7 = op >> 25 & 0x7F;
@@ -237,7 +263,6 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     let rd = rd!(raw);
                     let rs1 = t_i64!(read_reg!(rs1!(raw)));
                     let rs2 = t_i64!(read_reg!(rs2!(raw)));
-                    // println!("Mul ->rs1: {}, rs2: {}, res: {}", rs1, rs2, rs1.wrapping_mul(rs2));
                     set_reg!(rd, rs1.wrapping_mul(rs2));
                 }
                 // Div  RV32M+RV64M
@@ -245,13 +270,6 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     let rd = rd!(raw);
                     let rs1: i64 = t_i64!(read_reg!(rs1!(raw)));
                     let rs2: i64 = t_i64!(read_reg!(rs2!(raw)));
-
-                    println!(
-                        "Div -> rs1: {}, rs2: {}, res: {}",
-                        rs1,
-                        rs2,
-                        rs1.wrapping_div(rs2)
-                    );
                     set_reg!(rd, rs1.wrapping_div(rs2));
                 }
                 // Rem  RV32M+RV64M
@@ -259,19 +277,54 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     let rd = rd!(raw);
                     let rs1: i64 = t_i64!(read_reg!(rs1!(raw)));
                     let rs2: i64 = t_i64!(read_reg!(rs2!(raw)));
-
-                    println!(
-                        "Rem -> rs1: {}, rs2: {}, res: {}",
-                        rs1,
-                        rs2,
-                        rs1.wrapping_rem(rs2)
-                    );
                     set_reg!(rd, rs1.wrapping_rem(rs2));
                 }
                 // error?
-                (_, _) => {
-                    panic!("unknown instruction")
+                _ => panic!("unknown instruction"),
+            }
+        }
+        // r_type RV64I
+        0b0111011 => {
+            let funct3 = op >> 12 & 0x7;
+            let funct7 = op >> 25 & 0x7F;
+            match (funct7, funct3) {
+                // Addw
+                (0b0000000, 0b000) => {
+                    let rd = rd!(raw);
+                    let rs1 = t_i32!((read_reg!(rs1!(raw)) & 0xFFFFFFFF) as u32);
+                    let rs2 = t_i32!((read_reg!(rs2!(raw)) & 0xFFFFFFFF) as u32);
+                    set_reg!(rd, rs1.wrapping_add(rs2));
                 }
+                // Subw
+                (0b0100000, 0b000) => {
+                    let rd = rd!(raw);
+                    let rs1 = t_i32!((read_reg!(rs1!(raw)) & 0xFFFFFFFF) as u32);
+                    let rs2 = t_i32!((read_reg!(rs2!(raw)) & 0xFFFFFFFF) as u32);
+                    set_reg!(rd, read_reg!(rs1).wrapping_sub(read_reg!(rs2)));
+                }
+                // Sllw
+                (0b0000000, 0b001) => {
+                    let rd = rd!(raw);
+                    let rs1 = t_i32!((read_reg!(rs1!(raw)) & 0xFFFFFFFF) as u32);
+                    let rs2 = t_i32!((read_reg!(rs2!(raw)) & 0xFFFFFFFF) as u32);
+                    set_reg!(rd, read_reg!(rs1) << read_reg!(rs2));
+                }
+
+                // Srlw
+                (0b0000000, 0b101) => {
+                    let rd = rd!(raw);
+                    let rs1 = t_i32!((read_reg!(rs1!(raw)) & 0xFFFFFFFF) as u32);
+                    let rs2 = t_i32!((read_reg!(rs2!(raw)) & 0xFFFFFFFF) as u32);
+                    set_reg!(rd, read_reg!(rs1) >> read_reg!(rs2));
+                }
+                // Sraw
+                (0b0100000, 0b101) => {
+                    let rd = rd!(raw);
+                    let rs1 = t_i32!((read_reg!(rs1!(raw)) & 0xFFFFFFFF) as u32);
+                    let rs2 = t_i32!((read_reg!(rs2!(raw)) & 0xFFFFFFFF) as u32);
+                    set_reg!(rd, (read_reg!(rs1) as i64) >> (read_reg!(rs2) as i64));
+                }
+                _ => panic!("unknown instruction"),
             }
         }
         // b_type
@@ -373,7 +426,15 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     };
                     set_reg!(rd, data);
                 }
-
+                // Lwu
+                0b110 => {
+                    let rd = rd!(raw);
+                    let rs = read_reg!(rs1!(raw));
+                    let imm = imm!(I, raw);
+                    let data = dram.get_u32(rs.wrapping_add(imm as u64) as usize);
+                    set_reg!(rd, data);
+                }
+                // Ld
                 0b011 => {
                     let rd = rd!(raw);
                     let rs = read_reg!(rs1!(raw));
@@ -436,7 +497,7 @@ pub fn execute_32(op: u32, dram: &mut Dram) {
                     let val = (rs2 & 0xFFFFFFFF) as u32;
                     dram.set_u32(addr, val);
                 }
-
+                // Sd
                 0b011 => {
                     let rs1 = read_reg!(rs1!(raw));
                     let rs2 = read_reg!(rs2!(raw));
